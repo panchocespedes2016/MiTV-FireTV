@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0D0D0F</color>
+    <color name="panel">#131315</color>
+    <color name="panel2">#19191C</color>
+    <color name="border">#2A2A2F</color>
+    <color name="accent">#C1111B</color>
+    <color name="accent2">#D21F2B</color>
+    <color name="text">#EEEEEE</color>
+    <color name="text_dim">#AAAAAA</color>
+    <color name="text_faint">#777777</color>
+    <color name="star">#FFD500</color>
+    <color name="progress_blue">#3B82F6</color>
+</resources>

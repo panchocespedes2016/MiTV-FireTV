@@ -1,0 +1,29 @@
+# Build outputs and local machine state
+build/
+app/build/
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Mirrored Maven repository (517 MB): regenerable with tools/mvnwalk.py,
+# never committed. The offline build in tools/build.sh uses it.
+localrepo/
+
+# Verification screenshots in the project root (some show account data
+# typed on the TV). App artwork under app/src/main/res is NOT excluded.
+*.png
+
+# Signing keystore: NEVER goes to GitHub. It lives only in this workspace
+# (keystore/ + KEYSTORE-INFO.txt) and in the backup copy the user keeps.
+# Without the same key, a fresh clone cannot build updates the Stick
+# accepts as updates of the installed app.
+keystore/
+KEYSTORE-INFO.txt
+
+# Kotlin compiler daemon logs
+.kotlin/
+
+# Maven-walk working files (cache and logs, regenerable)
+tools/httpcache/
+tools/*.log
