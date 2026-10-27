@@ -45,7 +45,9 @@ class LiveFragment : Fragment() {
     private var pendingPreview: Runnable? = null
 
     private var categories: List<CatItem> = emptyList()
-    private var selectedCat = "__all__"
+    // Empty until the first applyCategory() runs, so the early-return there
+    // never skips the initial load.
+    private var selectedCat = ""
     private var shownChannels: List<LiveChannel> = emptyList()
     private var focusedChannel: LiveChannel? = null
 
@@ -146,7 +148,13 @@ class LiveFragment : Fragment() {
         categories = list
     }
 
+    // Runs from a category row's focus listener: a full notifyDataSetChanged()
+    // here detaches the focused row, the focus is lost, and Fire OS falls
+    // back to the first tab (Inicio). Refresh only the previously/newly
+    // selected rows so the focused view stays attached.
     private fun applyCategory(id: String) {
+        if (id == selectedCat && chanList.adapter != null) return
+        val oldId = selectedCat
         selectedCat = id
         val base = baseChannels()
         shownChannels = when {
@@ -161,7 +169,11 @@ class LiveFragment : Fragment() {
             else -> base
         }
         chanList.adapter = ChannelAdapter(shownChannels)
-        catList.adapter?.notifyDataSetChanged()
+        val catAdapter = catList.adapter ?: return
+        val oldPos = categories.indexOfFirst { it.id == oldId }
+        if (oldPos >= 0) catAdapter.notifyItemChanged(oldPos)
+        val newPos = categories.indexOfFirst { it.id == id }
+        if (newPos >= 0) catAdapter.notifyItemChanged(newPos)
     }
 
     // ---------- Categories adapter ----------

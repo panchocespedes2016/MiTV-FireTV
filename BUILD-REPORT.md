@@ -176,3 +176,35 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
 ## Addendum 2026-10-21 (v1.0.7, installed on the Stick)
 
 - Channel rows in LiveFragment rendered the channel name vertically, letter by letter: the name TextView had no width/weight inside a wrap-content row, and the fixed columns (categories 250dp + preview 430dp + num/star/logo) starved the info column to ~18dp. Fix (authorized by the user): name TextView now takes the full info-column width on one line (weight 1, maxLines 1, ellipsize END) and widths were rebalanced — categories 250→215dp, preview 430→390dp (video height 218→201dp, keeps 16:9), logo 54→48dp, number column 30→26dp. Verified on the Stick: names read horizontally with program title, progress bar and times (v107-live.png).
+
+## Addendum 2026-10-27 (v1.0.8, installed on the Stick)
+
+- Posters in the Movies/Series/Home grids were black: the card ImageViews used
+  the opaque `card_bg` shape as `foreground`, painted OVER every loaded image.
+  Fix: new border-only foreground `card_fg.xml` (transparent fill, focus frame
+  only) in all 5 tile spots (VodFragment movie + series adapters, HomeFragment
+  media/poster/channel cards). Verified on the Stick: posters and channel
+  logos now show (v108-r1/r3/r4.png).
+- The remote's Menu (☰) key now opens a real options menu instead of silently
+  toggling a favorite (and doing nothing on the detail screen): new
+  `Ui.showMenuDialog` (dark panel, DPAD-friendly). Movie cards/detail: Play /
+  Continue, Favorite, Mark as watched. Series cards: View episodes, Favorite.
+  Series detail: Favorite. Movies/Series hint now reads "☰ Menú Opciones".
+  Verified: menu opens focused on the first option (v108-r2.png).
+- Source published to GitHub (public, sanitized): panchocespedes2016/MiTV-FireTV
+  (commit 86ee63f). The signing keystore is NOT in the repo.
+
+## Addendum 2026-10-27 (v1.0.9, installed on the Stick)
+
+- Navigation bug: pressing Down from the TV tab bounced back to Inicio.
+  Cause: a category row's focus listener called applyCategory(), which ran a
+  full notifyDataSetChanged() on the category list and swapped the channel
+  adapter; the focused row was detached, focus was lost, and Fire OS fell
+  back to the first tab (Inicio). Fix in LiveFragment and VodFragment
+  (same pattern): applyCategory() now early-returns when the category is
+  already selected and refreshes only the previously/newly selected rows
+  via notifyItemChanged, so the focused view stays attached. selectedCat
+  starts empty so the initial load still runs. Verified on the Stick with
+  the exact reported path: Right (TV tab) -> Down (Historial) -> Down x2
+  (Todo) -> Right (channel 2, preview playing) -> Down (channel 3)
+  (v109-u2/u4/u5/u6.png).

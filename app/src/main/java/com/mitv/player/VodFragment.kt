@@ -22,7 +22,9 @@ class VodFragment : Fragment() {
     private lateinit var catList: RecyclerView
     private lateinit var grid: RecyclerView
     private var categories: List<LiveFragment.CatItem> = emptyList()
-    private var selectedCat = "__all__"
+    // Empty until the first applyCategory() runs, so the early-return there
+    // never skips the initial load.
+    private var selectedCat = ""
 
     companion object {
         fun newInstance(isSeries: Boolean) = VodFragment().apply {
@@ -89,7 +91,12 @@ class VodFragment : Fragment() {
         categories = list
     }
 
+    // Same focus-loss hazard as LiveFragment: this runs from a category
+    // row's focus listener, so only the previously/newly selected rows are
+    // refreshed instead of the whole list (see LiveFragment.applyCategory).
     private fun applyCategory(id: String) {
+        if (id == selectedCat && grid.adapter != null) return
+        val oldId = selectedCat
         selectedCat = id
         if (isSeries) {
             val items = when {
@@ -114,7 +121,11 @@ class VodFragment : Fragment() {
             }
             grid.adapter = MovieAdapter(items)
         }
-        catList.adapter?.notifyDataSetChanged()
+        val catAdapter = catList.adapter ?: return
+        val oldPos = categories.indexOfFirst { it.id == oldId }
+        if (oldPos >= 0) catAdapter.notifyItemChanged(oldPos)
+        val newPos = categories.indexOfFirst { it.id == id }
+        if (newPos >= 0) catAdapter.notifyItemChanged(newPos)
     }
 
     /** Same watched-toggle as the detail screen, so the ☰ menu can offer it from the grid. */
