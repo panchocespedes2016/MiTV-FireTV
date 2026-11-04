@@ -661,3 +661,21 @@ the same HistoryStore.recent("tv") call as TV's; the first rows
 differed from TV's between captures because history only changes on
 real plays (Playback.recordPlay), so intervening remote plays reorder
 it legitimately. Stick left on the Guide tab.
+
+## v1.0.21 (2026-11-04, versionCode 22) — Guide shows ALL channels
+
+User's correction ("negativo"): the Guide must list every channel,
+not only the ones with EPG. GuideFragment now builds one row per
+channel (1543); a row without current EPG data shows "sin EPG" in
+place of the programme lines, and rows with data keep AHORA/DESPUÉS
+unchanged. The EPG-only filter and both EPG empty states are gone;
+the only empty state left is no channels at all (no list / not
+synced). Sidebar counts are now the full ones, identical to TV's
+(Historial 15 / Favoritos 12 / Todo 1543 / groups). APK: clean md5
+6df44dfdad575aafd26c76c14f8e38eb, 6,047,747 bytes, same release cert;
+installed via pi3 ADB, dumpsys confirms 22/1.0.21. Build 5m 57s
+(detached, /tmp/b121.log — Kotlin daemon failed to connect, fell
+back to compiling without it). NOT verified on screen: the
+verification run found the user live on the TV (Fire OS home in the
+captures), so no ADB navigation was run; on-screen confirmation is
+pending his own remote check.

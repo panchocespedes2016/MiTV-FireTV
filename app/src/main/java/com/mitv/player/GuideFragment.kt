@@ -14,8 +14,9 @@ import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 
-/** One guide row: the channel plus its current and next programmes. */
-private typealias GuideRow = Triple<LiveChannel, EpgProgramme, EpgProgramme?>
+/** One guide row: the channel plus its current and next programmes,
+ *  either of which is null when the channel has no EPG data. */
+private typealias GuideRow = Triple<LiveChannel, EpgProgramme?, EpgProgramme?>
 
 /** Guía v1: per-channel now/next list (a full time-grid is deferred — see
  *  BUILD-REPORT). Same two-column layout as TV en vivo: the category
@@ -30,7 +31,7 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
     private lateinit var catAdapter: CatAdapter
     private lateinit var guideAdapter: GuideAdapter
 
-    private var allWithEpg: List<GuideRow> = emptyList()
+    private var allRows: List<GuideRow> = emptyList()
     private var shownItems: List<GuideRow> = emptyList()
     private var categories: List<LiveFragment.CatItem> = emptyList()
     private var categoriesApplied = false
@@ -123,17 +124,17 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
-        if (!EpgStore.hasData) {
-            root.addView(Ui.emptyText(ctx, "Sin guía todavía.\nSincroniza la lista (Ajustes) para descargar la EPG."))
+        if (ContentStore.channels.isEmpty()) {
+            root.addView(Ui.emptyText(ctx, if (PlaylistStore.active == null)
+                "Sin contenido.\nAgrega una lista en Ajustes → Listas IPTV."
+            else "Sin contenido.\nSincroniza la lista desde Ajustes."))
             return root
         }
-        allWithEpg = ContentStore.channels.mapNotNull { ch ->
+        // Every channel appears, with or without EPG: a channel without
+        // guide data shows "sin EPG" in its row instead of programmes.
+        allRows = ContentStore.channels.map { ch ->
             val (now, next) = EpgStore.nowNext(ch)
-            if (now == null) null else Triple(ch, now, next)
-        }
-        if (allWithEpg.isEmpty()) {
-            root.addView(Ui.emptyText(ctx, "La guía no coincide con ningún canal de la lista activa."))
-            return root
+            Triple(ch, now, next)
         }
         root.orientation = LinearLayout.HORIZONTAL
 
@@ -169,7 +170,7 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
     }
 
     private fun buildCategories() {
-        val base = allWithEpg.map { it.first }
+        val base = allRows.map { it.first }
         val histCount = HistoryStore.recent("tv").count { e -> base.any { it.key == e.key } }
         val favCount = base.count { Favorites.isFav(it.key) }
         val list = ArrayList<LiveFragment.CatItem>()
@@ -193,7 +194,7 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
         val oldId = selectedCat
         selectedCat = id
         categoriesApplied = true
-        val base = allWithEpg
+        val base = allRows
         shownItems = when {
             id == "__all__" -> base
             id == "__favs__" -> base.filter { Favorites.isFav(it.first.key) }
@@ -380,10 +381,15 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 h.logoIv.setImageDrawable(null)
             }
             h.nameTv.text = ch.name
-            val total = (now.stopUtc - now.startUtc).coerceAtLeast(1)
-            val done = ((System.currentTimeMillis() - now.startUtc).coerceIn(0, total) * 100 / total).toInt()
-            h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
-            h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
+            if (now == null) {
+                h.nowTv.text = "sin EPG"
+                h.nextTv.text = ""
+            } else {
+                val total = (now.stopUtc - now.startUtc).coerceAtLeast(1)
+                val done = ((System.currentTimeMillis() - now.startUtc).coerceIn(0, total) * 100 / total).toInt()
+                h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
+                h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
+            }
         }
 
         private fun updateStar(star: TextView, ch: LiveChannel) {
