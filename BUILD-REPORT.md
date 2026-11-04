@@ -634,3 +634,30 @@ in the column with room to spare. APK: clean md5 9eb934e1cde15cf9f660c2a8ebb79d0
 6,045,543 bytes, same release cert; installed via pi3 ADB, dumpsys
 confirms 20/1.0.19. Build 3m 20s (detached, /tmp/b119.log). Favorites
 still 12; Stick left on TV en vivo.
+
+## v1.0.20 (2026-11-04, versionCode 21) — categories column in the Guide
+
+User's request: the Guide gets the category column with exactly TV's
+dimensions, plus channel numbers and the favorite star. GuideFragment
+rewritten on LiveFragment's layout: horizontal root, category column
+215dp + 14dp marginEnd, panel background, 8dp padding, same 16sp
+card_bg rows (Historial/Favoritos/Todo/groups, counts scoped to the
+408 channels that have EPG); guide list weight 1. Rows: 56dp number
+(room for 5 digits, as in v1.0.19), 30dp star, 54dp logo, now/next.
+Category focus applies the filter synchronously (setItems, v1.0.18
+pattern); position-aware restoreFocus with retry; BACK climbs
+rows -> categories -> tab; row Menu toggles the favorite exactly like
+TV (star flips at once, sidebar counts refresh, unfavoriting inside
+Favoritos drops the row now). Verification on the Stick (captures
+v120-g1/g2/g3/h1-h4, all read): Historial 11 / Favoritos 7 / Todo
+408; Favoritos shows only starred rows with numbers restarting at 1;
+Menu add (7->8, toast, gold star) then Menu remove (8->7, toast,
+empty star) leaves favorites exactly as found; both BACK legs land
+where they should; no escapes, no overlap. APK: clean md5
+76c2bff366e9a48e86bee08132feae36, 6,047,871 bytes, same release cert;
+installed via pi3 ADB, dumpsys confirms 21/1.0.20. Build 3m 27s
+(detached, /tmp/b120.log). Note: the guide's Historial order follows
+the same HistoryStore.recent("tv") call as TV's; the first rows
+differed from TV's between captures because history only changes on
+real plays (Playback.recordPlay), so intervening remote plays reorder
+it legitimately. Stick left on the Guide tab.
