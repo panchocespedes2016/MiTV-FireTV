@@ -16,12 +16,20 @@ ExoPlayer/Media3, pensada para manejarse con el mando a distancia.
 
 La v1 no trae parrilla de guía; la guía es lista de ahora/siguiente por canal.
 
-## Compilar (offline)
+## Compilar
 
-El entorno de compilación no descarga dependencias en vivo: el grafo Maven
-completo se espeja una vez a `localrepo/` y Gradle compila contra ese espejo.
+Dos caminos, mismo resultado (versiones fijadas en los scripts de Gradle):
 
-Requisitos: JDK 21, Android SDK (API 34) y Gradle 8.7.
+**Máquina normal, con internet** (el clon compila solo; no hace falta
+`localrepo/`): requisitos JDK 21 y Android SDK (API 34).
+
+```sh
+./gradlew assembleRelease
+```
+
+**Entorno sin acceso a Maven** (la VM de compilación): el grafo Maven
+completo se espeja una vez a `localrepo/` y Gradle compila contra ese
+espejo, sin red.
 
 ```sh
 python3 tools/mvnwalk.py   # genera localrepo/ (no se sube al repo)
@@ -35,6 +43,11 @@ El APK queda en `app/build/outputs/apk/release/app-release.apk`.
 La llave de firma (`keystore/`) **no está en este repositorio**. Sin la misma
 llave, el Stick no acepta una instalación como actualización de la app ya
 instalada: hay que generar una llave propia o usar la del autor.
+
+Sin keystore, el build no falla: el APK release sale **sin firmar** (con un
+aviso) y el build debug usa la llave debug automática. Las contraseñas de
+la llave se leen de `keystore/KEYSTORE-INFO.txt` o de las variables de
+entorno `MITV_STORE_PASSWORD` / `MITV_KEY_PASSWORD` (las variables ganan).
 
 ## Versiones
 

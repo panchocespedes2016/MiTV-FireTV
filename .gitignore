@@ -11,8 +11,9 @@ local.properties
 localrepo/
 
 # Verification screenshots in the project root (some show account data
-# typed on the TV). App artwork under app/src/main/res is NOT excluded.
-*.png
+# typed on the TV). Root-only: app artwork under app/src/main/res is
+# tracked (a clean clone must rebuild the icon/banner).
+/*.png
 
 # Signing keystore: NEVER goes to GitHub. It lives only in this workspace
 # (keystore/ + KEYSTORE-INFO.txt) and in the backup copy the user keeps.

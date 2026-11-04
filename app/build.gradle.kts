@@ -7,7 +7,9 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
-// Signing credentials live in keystore/KEYSTORE-INFO.txt (generated once).
+// Signing credentials live in keystore/KEYSTORE-INFO.txt (generated once;
+// the file and the .jks stay out of git), or in the MITV_STORE_PASSWORD
+// / MITV_KEY_PASSWORD environment variables (which win over the file).
 // Parse them so the build is reproducible without committing gradle props.
 fun keystoreInfo(): Properties {
     val p = Properties()
@@ -21,9 +23,22 @@ fun keystoreInfo(): Properties {
             }
         }
     }
+    System.getenv("MITV_STORE_PASSWORD")?.takeIf { it.isNotBlank() }?.let { p.setProperty("store", it) }
+    System.getenv("MITV_KEY_PASSWORD")?.takeIf { it.isNotBlank() }?.let { p.setProperty("key", it) }
     return p
 }
 val ks = keystoreInfo()
+fun hasText(v: String?) = !v.isNullOrBlank()
+// The release key is present only when the keystore file AND both
+// passwords exist. Without it the release build is produced UNSIGNED
+// (with a warning) instead of failing cryptically; an unsigned APK
+// cannot update the Stick install, which needs the same signing key.
+val hasReleaseKey = rootProject.file("keystore/mitv-release.jks").exists() &&
+    hasText(ks.getProperty("store")) && hasText(ks.getProperty("key"))
+if (!hasReleaseKey) {
+    logger.warn("MiTV: release keystore not found, building UNSIGNED release APK. " +
+        "It cannot update the installed app on the Stick without the release key.")
+}
 
 android {
     namespace = "com.mitv.player"
@@ -38,21 +53,25 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file("keystore/mitv-release.jks")
-            storePassword = ks.getProperty("store")
-            keyAlias = "mitv"
-            keyPassword = ks.getProperty("key")
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = rootProject.file("keystore/mitv-release.jks")
+                storePassword = ks.getProperty("store")
+                keyAlias = "mitv"
+                keyPassword = ks.getProperty("key")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKey) signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // Default debug keystore (auto-generated): debug builds work
+            // on a clean clone without the release key. Never the
+            // release key — debug APKs must not carry the release identity.
         }
     }
 
