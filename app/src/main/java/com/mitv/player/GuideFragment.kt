@@ -48,7 +48,7 @@ class GuideFragment : Fragment(), FocusRestorable {
             root.addView(Ui.emptyText(ctx, "La guía no coincide con ningún canal de la lista activa."))
             return root
         }
-        val list = RecyclerView(ctx).apply {
+        val list = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             layoutManager = KeepFocusLinearLayoutManager(ctx)
         }

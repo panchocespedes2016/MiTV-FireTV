@@ -169,12 +169,14 @@ object Ui {
 }
 
 /**
- * LayoutManagers that never let DPAD focus escape the list when a focus
- * search fails. Fast scrolling recycles the focused row before the next one
- * is laid out; the default search then falls through to the rest of the
- * window, and the system's fallback lands on the first tab (Inicio), whose
- * focus listener switches the whole screen. Focusing the edge visible child
- * instead keeps the focus inside the list. Only UP/DOWN are contained:
+ * LayoutManagers that keep DPAD focus moving through the list. The stock
+ * onFocusSearchFailed scrolls to and returns the next row, which is what
+ * makes Down move past the last visible row; v1.0.11 replaced it outright
+ * with the edge visible child, and at every scroll boundary that child was
+ * the focused row itself, which RecyclerView vetoes (isPreferredNextFocus)
+ * and the search escaped to the sibling list. So: delegate to the stock
+ * behavior FIRST, and only when there is truly no next row (list edge)
+ * fall back to the edge child. Only UP/DOWN are contained:
  * LEFT/RIGHT must still escape (categories <-> channels, grid <-> sidebar).
  */
 class KeepFocusLinearLayoutManager(ctx: Context) : LinearLayoutManager(ctx) {
@@ -182,6 +184,9 @@ class KeepFocusLinearLayoutManager(ctx: Context) : LinearLayoutManager(ctx) {
         focused: View, direction: Int,
         recycler: RecyclerView.Recycler, state: RecyclerView.State
     ): View? {
+        // Stock behavior scrolls to and returns the next row. Only at the
+        // true list edge (no next row) keep the edge child in view.
+        super.onFocusSearchFailed(focused, direction, recycler, state)?.let { return it }
         val pos = when (direction) {
             View.FOCUS_DOWN -> findLastVisibleItemPosition()
             View.FOCUS_UP -> findFirstVisibleItemPosition()
@@ -196,11 +201,38 @@ class KeepFocusGridLayoutManager(ctx: Context, spanCount: Int) : GridLayoutManag
         focused: View, direction: Int,
         recycler: RecyclerView.Recycler, state: RecyclerView.State
     ): View? {
+        super.onFocusSearchFailed(focused, direction, recycler, state)?.let { return it }
         val pos = when (direction) {
             View.FOCUS_DOWN -> findLastVisibleItemPosition()
             View.FOCUS_UP -> findFirstVisibleItemPosition()
             else -> return null
         }
         return if (pos != RecyclerView.NO_POSITION) findViewByPosition(pos) else null
+    }
+}
+
+/**
+ * RecyclerView that keeps Up/Down navigation inside itself. Even with the
+ * managers above, RecyclerView vetoes a same-row answer and the search
+ * falls through to the parent, whose window-wide search can land on a
+ * sibling list (categories <-> channels). Trap that case: when the Up/Down
+ * result lives inside another RecyclerView, keep the current focus.
+ * Left/Right still escape (list <-> sidebar) and Up to the tab bar still
+ * works, because the tab bar is not a RecyclerView.
+ */
+class FocusTrapRecyclerView @JvmOverloads constructor(
+    ctx: Context, attrs: android.util.AttributeSet? = null, defStyle: Int = 0
+) : RecyclerView(ctx, attrs, defStyle) {
+    override fun focusSearch(focused: View, direction: Int): View? {
+        val result = super.focusSearch(focused, direction)
+        if (result != null && (direction == View.FOCUS_DOWN || direction == View.FOCUS_UP)) {
+            var v: View? = result
+            while (v != null && v !== this) {
+                val parent = v.parent
+                if (parent is RecyclerView && parent !== this) return focused
+                v = parent as? View
+            }
+        }
+        return result
     }
 }

@@ -272,3 +272,31 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   RecyclerView while still allowing Left/Right between lists and Up to
   the tab bar (the tab bar is not a RecyclerView). Awaiting the user's
   decision; v1.0.12 stays installed meanwhile.
+
+## Addendum 2026-11-04 (v1.0.13, installed on the Stick)
+
+- The v1.0.11 manager was the bug. The user reported live, precisely:
+  category -> right into channels -> Down jumps to the category list the
+  moment the first off-screen channel must come in. Confirmed against the
+  RecyclerView 1.3.2 bytecode: the stock onFocusSearchFailed lays out
+  (fill) and returns the next row, which is what moves focus past the
+  last visible row; the v1.0.11 override replaced it with the edge
+  visible child, which at a scroll boundary IS the focused row, and
+  isPreferredNextFocus vetoes a same-row answer, so the search fell
+  through to the parent and jumped to the sibling list. Fix, two
+  layers: (1) KeepFocus managers delegate to the stock
+  onFocusSearchFailed FIRST and only fall back to the edge child at the
+  true list edge; (2) new FocusTrapRecyclerView (Ui.kt): Up/Down results
+  landing inside a sibling RecyclerView keep the current focus, while
+  Left/Right between lists and Up to the tab bar still work (the tab
+  bar is not a RecyclerView). Applied to all six lists (Live
+  categories/channels, Vod categories/grid, Guide, episode list).
+  The v1.0.12 position restore stays as the total-focus-loss layer.
+  Installed 2026-11-04 (versionCode 14, APK md5
+  047b63878e42c74de8c8804263ba5926).
+- Verification on the Stick: grid leg VERIFIED (v113-t4/t5: after 10 and
+  30 Downs the focus stayed on grid cards in scrolled rows, no escape
+  to categories, no jump to Inicio). Live-channels leg NOT verified:
+  the script never entered Live TV (shots show the Home screen), so no
+  claim is made for channels; the user's own live test with the remote
+  is the pending ground truth.

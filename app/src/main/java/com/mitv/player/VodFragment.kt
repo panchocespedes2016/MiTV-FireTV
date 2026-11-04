@@ -73,7 +73,7 @@ class VodFragment : Fragment(), FocusRestorable {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
-        catList = RecyclerView(ctx).apply {
+        catList = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 250), ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = Ui.dp(ctx, 14)
             }
@@ -82,7 +82,7 @@ class VodFragment : Fragment(), FocusRestorable {
             setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
         }
         root.addView(catList)
-        grid = RecyclerView(ctx).apply {
+        grid = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
             layoutManager = KeepFocusGridLayoutManager(ctx, 5)
             clipToPadding = false

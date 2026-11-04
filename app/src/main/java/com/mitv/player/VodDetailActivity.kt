@@ -216,7 +216,7 @@ class VodDetailActivity : AppCompatActivity() {
         val status = Ui.text(ctx, "Cargando episodios…", 16f, R.color.text_dim)
         status.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Ui.dp(ctx, 20) }
         root.addView(status)
-        val epList = RecyclerView(ctx).apply {
+        val epList = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 520)).apply { topMargin = Ui.dp(ctx, 12) }
             layoutManager = KeepFocusLinearLayoutManager(ctx)
         }

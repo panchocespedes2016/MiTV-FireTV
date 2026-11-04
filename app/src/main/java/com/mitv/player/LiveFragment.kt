@@ -105,7 +105,7 @@ class LiveFragment : Fragment(), FocusRestorable {
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
 
-        catList = RecyclerView(ctx).apply {
+        catList = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 215), ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = Ui.dp(ctx, 14)
             }
@@ -115,7 +115,7 @@ class LiveFragment : Fragment(), FocusRestorable {
         }
         root.addView(catList)
 
-        chanList = RecyclerView(ctx).apply {
+        chanList = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
             layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
