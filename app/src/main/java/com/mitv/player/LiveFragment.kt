@@ -383,7 +383,11 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 isFocusable = true; isClickable = true
             }
             val num = Ui.text(ctx, "", 15f, R.color.text_faint).apply {
-                layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 26), ViewGroup.LayoutParams.WRAP_CONTENT)
+                // Room for 5 digits: a digit at 15sp is ~8.3dp, so five
+                // need ~42dp; 56dp leaves margin. The list tops at 4
+                // digits today (1543), but the column must not clip when
+                // a list grows past 9999.
+                layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 56), ViewGroup.LayoutParams.WRAP_CONTENT)
             }
             root.addView(num)
             val star = Ui.text(ctx, "☆", 20f, R.color.text_faint).apply {

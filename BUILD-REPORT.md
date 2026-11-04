@@ -616,3 +616,21 @@ list must be known the moment a category is focused, not settled later.
   same release cert (SHA-256 a9b98715...). Installed via pi3 ADB,
   dumpsys confirms 19/1.0.18. Build 3m 23s (detached; the earlier
   foreground build log is /tmp/b118.log).
+
+## v1.0.19 (2026-11-04, versionCode 20) — channel numbers fit 5 digits
+
+User's report: the channel-number column only fit 3 digits. The num
+TextView in LiveFragment's ChannelAdapter was a fixed 26dp at 15sp;
+a digit is ~8.3dp, so 4 digits (~33dp) already overflowed it. Widened
+to 56dp (~42dp for five digits + margin); the name column (weight 1)
+absorbs the 30dp. Only place with channel numbers — Search/Guide/Home
+show none, and Deportes uses the same fragment. Verification on the
+Stick (captures v119-w1/w2, both read): rows 1-5 and 7-11 render with
+numbers, star, logo and name aligned, no overlap, no clipping; preview
+playing. Honest limit: no 5-digit channel exists in the current list
+(max 1543), so a 5-digit number itself cannot be screenshotted — the
+fit follows from the width arithmetic, and 2-digit numbers already sit
+in the column with room to spare. APK: clean md5 9eb934e1cde15cf9f660c2a8ebb79d0f,
+6,045,543 bytes, same release cert; installed via pi3 ADB, dumpsys
+confirms 20/1.0.19. Build 3m 20s (detached, /tmp/b119.log). Favorites
+still 12; Stick left on TV en vivo.
