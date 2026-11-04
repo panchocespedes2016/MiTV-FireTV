@@ -231,8 +231,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
     private fun buildCategories() {
         val base = baseChannels()
         val section = if (sportsOnly) "sports" else "tv"
-        val histCount = HistoryStore.recent(section).count { e -> base.any { it.key == e.key } } +
-            if (sportsOnly) 0 else HistoryStore.recent("sports").size.let { 0 }
+        val histCount = HistoryStore.recent(section).count { e -> base.any { it.key == e.key } }
         val favCount = base.count { Favorites.isFav(it.key) }
         val list = ArrayList<CatItem>()
         list.add(CatItem("__history__", "🕘 Historial", histCount))
@@ -248,8 +247,8 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
     // here detaches the focused row, the focus is lost, and Fire OS falls
     // back to the first tab (Inicio). Refresh only the previously/newly
     // selected rows so the focused view stays attached.
-    private fun applyCategory(id: String) {
-        if (id == selectedCat && categoriesApplied) return
+    private fun applyCategory(id: String, force: Boolean = false) {
+        if (!force && id == selectedCat && categoriesApplied) return
         val oldId = selectedCat
         selectedCat = id
         categoriesApplied = true
@@ -448,6 +447,9 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                         val nowFav = Favorites.toggle(ch.key)
                         updateStar(h.star, ch)
                         buildCategories(); catAdapter.submitList(categories)
+                        // Unfavoriting inside Favoritos must drop the row
+                        // now, not on the next category switch.
+                        if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
                         android.widget.Toast.makeText(ctx,
                             if (nowFav) "★ Agregado a Favoritos" else "Quitado de Favoritos",
                             android.widget.Toast.LENGTH_SHORT).show()

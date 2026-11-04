@@ -474,3 +474,86 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   a9b98715... and version 1.0.16/17. The online-resolution path
   itself (./gradlew on a machine with internet) could NOT be
   tested from this VM — stated, not assumed.
+
+## Addendum 2026-11-04 (v1.0.17, installed on the Stick)
+
+- Second half of the external review ("y lo otro"): the user approved
+  groups A (verified safe fixes) and B (fluency), C deferred. 17 files
+  changed, versionCode 18 / versionName 1.0.17, clean APK md5
+  fa9d16462b16fe7696795e05d39aab99, verified by dumpsys 18/1.0.17,
+  same release cert. A service restart killed the first foreground
+  build mid-run and left the stale v1.0.16 APK in place; the build
+  was re-run detached and the APK timestamp/version re-verified
+  before install.
+- Group A: (5) SettingsFragment/VodDetailActivity/MainActivity
+  dropped their never-cancelled CoroutineScope for lifecycleScope;
+  SettingsFragment.render() guards isAdded. (6) VodDetailActivity
+  resolves the item from ContentStore by an Intent "key" extra,
+  VodDetailRegistry kept only as fallback. (7) Net.escPath() encodes
+  Xtream path segments (URLEncoder, + -> %20); query params keep
+  Net.esc. (8) Net.getJsonArray() throws on an explicit panel denial
+  (auth != 1) or an error message field; PlaylistLoader.checkAuth()
+  validates the bare player_api.php call first; PlaylistEditActivity
+  validates Xtream/M3U/EPG URLs via normalizeServer() (scheme
+  case-insensitive, added when missing, host required). (9) save()
+  validates all new values in locals before mutating the stored
+  Playlist. (10) EpgStore.clear() (memory + TSV + meta, updatedUtc=0)
+  runs when the active list is marked or deleted; meta files now
+  persist the ambiguity set (!AMBIG! line). (12) PlaylistLoader
+  single-flight refresh (AtomicBoolean; concurrent call returns
+  "Ya hay una sincronización en curso"). (13) PlayerActivity
+  pauses in onStop and resumes in onStart if it was playing;
+  setHandleAudioBecomingNoisy(true). (14) Track dialog clears
+  overrides of the type before adding/replacing. (16) Playback
+  section recorded via sectionFor() (sports categories -> "sports"),
+  so Guide/Home/Search plays land in Deportes history. (18)
+  Favorite MENU toggle in Favoritos re-applies the category with
+  force=true, so the row disappears at once. (19a) updateProgress
+  no longer bumps updatedUtc. (20) Util.fold() uses one compiled
+  regex. (25) Cache size measured on IO, re-render only on change
+  ("Calculando…" first). (32) AlertDialog theme dark (both
+  android: and appcompat attributes, panel background). (33) Dead
+  code removed: Util.utcHm, Ui.hintButton, Ui.spinner, the
+  sportsOnly dead expression, an unused val in VodFragment.
+- Group B: (21) SearchFragment builds folded-name indexes and
+  filters sequences with take(30/40/40), debounced 200 ms. (22)
+  HistoryStore writes via a single-thread executor, coalesced,
+  snapshots under the lock, tmp+rename.
+- Deferred (Group C, with reasons given to the user): fragment
+  retention across tab switches (15), tv_archive_duration units
+  (17), startup/EPG-refresh behavior (23/26), streaming parsers
+  (24), keystore password file location (27), cleartext narrowing
+  (28, impossible for arbitrary user URLs), credential encryption
+  (29, accepted personal-use risk), tests/CI (30), strings.xml
+  (31), M3U classification/decoding/Glide fallbacks (19c-e).
+- Verification on the Stick, phase 1 + phase 2 (captures v117-*,
+  all read): burst guard HOLDS (spaced 10 Downs: 6->15, one ADB key
+  lost under preview load, no escape; unspaced 40 Downs: 6->15,
+  heavy key loss, no escape; BACK channels->categories keeps Todo).
+  Dark dialog VERIFIED (playlist dialog, b0). Favorite ADD/REMOVE
+  VERIFIED on screen: MENU added ch 443 (Favoritos 12->13, toast,
+  star filled), MENU in Favoritos removed it at once (row gone,
+  count back to 12, toast "Quitado de Favoritos", focus on the next
+  row) — the user's favorites were restored to their original 12.
+  Search VERIFIED: tapping the input opens the Fire OS keyboard,
+  "cnn" returned "Canales (5)" behind it. EPG mid-task switch
+  VERIFIED: OK on "Actualizar guía ahora" + BACK at once -> Inicio
+  alive, no crash dialog, pid 2160, no FATAL in logcat; the EPG
+  timestamp advanced 3:46 -> 3:57 p.m. (the blocking download
+  completes even though the scope is cancelled). Cache size
+  VERIFIED: "En uso: 192 MB". Player: fullscreen playback VERIFIED
+  (i5); pause-on-Home is CODE-VERIFIED ONLY (onStop->pause) — the
+  relaunch after HOME showed the list with the preview, not the
+  player, so the resume path is untested by ADB; the user's ears
+  are ground truth. Code-level only (no second list / bad
+  credentials used — never with the user's credentials): auth
+  validation, single-flight, EPG clear, URL validation, path
+  encoding, sports-section history.
+- Honest misses during verification, all re-run: phase 1's
+  settings->search navigation never left Ajustes (UPs lost), so the
+  EPG and search legs were re-run in phase 2; one phase-2c leg
+  typed "3" into the search box because the Fire OS keyboard was
+  still open when the Ajustes tab was tapped (DPAD keys went to the
+  keyboard) — the leg was re-run with the keyboard dismissed first.
+  The Stick was left on Inicio, app alive, favorites at 12.
+- Commit + push pending in this same pass (see git log).

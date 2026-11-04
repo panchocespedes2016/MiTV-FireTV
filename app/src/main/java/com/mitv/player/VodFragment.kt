@@ -168,7 +168,6 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
     private fun buildCategories() {
         val list = ArrayList<LiveFragment.CatItem>()
-        val section = if (isSeries) "series" else "movies"
         if (isSeries) {
             val hist = HistoryStore.recent("series").size
             val fav = ContentStore.series.count { Favorites.isFav(it.key) }
@@ -194,8 +193,8 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
     // Same focus-loss hazard as LiveFragment: this runs from a category
     // row's focus listener, so only the previously/newly selected rows are
     // refreshed instead of the whole list (see LiveFragment.applyCategory).
-    private fun applyCategory(id: String) {
-        if (id == selectedCat && categoriesApplied) return
+    private fun applyCategory(id: String, force: Boolean = false) {
+        if (!force && id == selectedCat && categoriesApplied) return
         val oldId = selectedCat
         selectedCat = id
         categoriesApplied = true
@@ -354,6 +353,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                             (if (Favorites.isFav(m.key)) "☆ Quitar de Favoritos" else "★ Favorito") to {
                                 Favorites.toggle(m.key)
                                 buildCategories(); catAdapter.submitList(categories)
+                                if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
                                 notifyItemChanged(p)
                             },
                             (if (HistoryStore.isWatched(m.key)) "✓ Visto (quitar)" else "✓ Marcar como visto") to {
@@ -444,6 +444,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                             (if (Favorites.isFav(s.key)) "☆ Quitar de Favoritos" else "★ Favorito") to {
                                 Favorites.toggle(s.key)
                                 buildCategories(); catAdapter.submitList(categories)
+                                if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
                             }
                         ))
                         true

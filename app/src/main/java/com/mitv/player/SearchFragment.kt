@@ -24,6 +24,31 @@ class SearchFragment : Fragment(), BackToParentHandler {
     private lateinit var input: EditText
     private var rootLayout: View? = null
 
+    // Folded-name index, rebuilt when the catalog changes: folding
+    // ~15k names per keystroke was the search lag on the Stick.
+    private var indexStamp = -1L
+    private var chanIndex: List<Pair<LiveChannel, String>> = emptyList()
+    private var movieIndex: List<Pair<VodMovie, String>> = emptyList()
+    private var serieIndex: List<Pair<SerieItem, String>> = emptyList()
+
+    private val searchHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingSearch: Runnable? = null
+
+    private fun ensureIndex() {
+        val stamp = ContentStore.updatedUtc
+        if (stamp == indexStamp && chanIndex.size == ContentStore.channels.size &&
+            movieIndex.size == ContentStore.movies.size && serieIndex.size == ContentStore.series.size) return
+        chanIndex = ContentStore.channels.map { it to Util.fold(it.name) }
+        movieIndex = ContentStore.movies.map { it to Util.fold(it.name) }
+        serieIndex = ContentStore.series.map { it to Util.fold(it.name) }
+        indexStamp = stamp
+    }
+
+    override fun onDestroyView() {
+        pendingSearch?.let { searchHandler.removeCallbacks(it) }
+        super.onDestroyView()
+    }
+
     /** Back climbs one level: results or input -> the tab bar. */
     override fun handleBack(): Boolean {
         val root = rootLayout ?: return false
@@ -52,7 +77,15 @@ class SearchFragment : Fragment(), BackToParentHandler {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         input.addTextChangedListener(object : TextWatcher {
-            override fun afterTextChanged(s: Editable?) { render(s?.toString() ?: "") }
+            override fun afterTextChanged(s: Editable?) {
+                // Debounce: one render 200 ms after typing stops, not
+                // one per keystroke.
+                val q = s?.toString() ?: ""
+                pendingSearch?.let { searchHandler.removeCallbacks(it) }
+                val r = Runnable { if (isAdded) render(q) }
+                pendingSearch = r
+                searchHandler.postDelayed(r, 200)
+            }
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         })
@@ -104,8 +137,9 @@ class SearchFragment : Fragment(), BackToParentHandler {
             return
         }
         var any = false
+        ensureIndex()
 
-        val chans = ContentStore.channels.filter { Util.fold(it.name).contains(q) }.take(30)
+        val chans = chanIndex.asSequence().filter { it.second.contains(q) }.take(30).map { it.first }.toList()
         if (chans.isNotEmpty()) {
             any = true
             resultsBox.addHeader("Canales (${chans.size})")
@@ -115,7 +149,7 @@ class SearchFragment : Fragment(), BackToParentHandler {
                 })
             }
         }
-        val movies = ContentStore.movies.filter { Util.fold(it.name).contains(q) }.take(40)
+        val movies = movieIndex.asSequence().filter { it.second.contains(q) }.take(40).map { it.first }.toList()
         if (movies.isNotEmpty()) {
             any = true
             resultsBox.addHeader("Películas (${movies.size})")
@@ -125,7 +159,7 @@ class SearchFragment : Fragment(), BackToParentHandler {
                 })
             }
         }
-        val series = ContentStore.series.filter { Util.fold(it.name).contains(q) }.take(40)
+        val series = serieIndex.asSequence().filter { it.second.contains(q) }.take(40).map { it.first }.toList()
         if (series.isNotEmpty()) {
             any = true
             resultsBox.addHeader("Series (${series.size})")

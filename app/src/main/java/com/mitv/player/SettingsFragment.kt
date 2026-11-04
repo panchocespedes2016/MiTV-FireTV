@@ -11,10 +11,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -25,8 +24,9 @@ import java.util.Date
  *  No decorative controls, per the user's MiTV rule. */
 class SettingsFragment : Fragment() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var rootBox: LinearLayout
+    /** Last measured image-cache size, refreshed off the main thread. */
+    private var cacheUsedMb: Long = -1
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val scroll = ScrollView(requireContext())
@@ -42,6 +42,9 @@ class SettingsFragment : Fragment() {
     }
 
     private fun render() {
+        // The sync callback (MainActivity) can fire after this fragment
+        // was replaced; never touch a detached view.
+        if (!isAdded) return
         val ctx = requireContext()
         // Preserve focus across the rebuild. render() runs on every onResume;
         // removing the focused row without restoring focus makes Fire OS fall
@@ -95,7 +98,9 @@ class SettingsFragment : Fragment() {
                 Toast.makeText(ctx, "No hay lista activa", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(ctx, "Descargando guía…", Toast.LENGTH_SHORT).show()
-                scope.launch {
+                // Fragment lifecycle scope: cancelled when the fragment is
+                // replaced, so render() can never run detached mid-task.
+                lifecycleScope.launch {
                     val ok = withContext(Dispatchers.IO) {
                         try { EpgStore.refresh(pl); true } catch (e: Exception) { false }
                     }
@@ -110,15 +115,16 @@ class SettingsFragment : Fragment() {
             (layoutParams as LinearLayout.LayoutParams).topMargin = Ui.dp(ctx, 18)
         })
         val cacheDir = File(ctx.cacheDir, "glide_images")
-        val usedMb = dirSize(cacheDir) / (1024 * 1024)
-        rootBox.addView(settingRow(ctx, "Borrar caché de imágenes", "En uso: $usedMb MB — las imágenes se vuelven a descargar al verlas") {
-            scope.launch {
+        val usedLabel = if (cacheUsedMb < 0) "Calculando…" else "$cacheUsedMb MB"
+        rootBox.addView(settingRow(ctx, "Borrar caché de imágenes", "En uso: $usedLabel — las imágenes se vuelven a descargar al verlas") {
+            lifecycleScope.launch {
                 withContext(Dispatchers.IO) { Glide.get(ctx).clearDiskCache() }
                 Glide.get(ctx).clearMemory()
                 Toast.makeText(ctx, "Caché borrada", Toast.LENGTH_SHORT).show()
                 render()
             }
         })
+        refreshCacheSize(cacheDir)
 
         // ---- Acerca de ----
         rootBox.addView(Ui.sectionTitle(ctx, "Acerca de", "").apply {
@@ -145,6 +151,7 @@ class SettingsFragment : Fragment() {
                     "Marcar como activa" -> {
                         PlaylistStore.setActive(pl)
                         ContentStore.clear()
+                        EpgStore.clear()
                         render()
                         (activity as? MainActivity)?.syncContent(showToast = true) { render() }
                     }
@@ -158,7 +165,7 @@ class SettingsFragment : Fragment() {
                             .setPositiveButton("Eliminar") { _, _ ->
                                 val wasActive = pl.isActive
                                 PlaylistStore.remove(pl)
-                                if (wasActive) ContentStore.clear()
+                                if (wasActive) { ContentStore.clear(); EpgStore.clear() }
                                 render()
                             }
                             .setNegativeButton("Cancelar", null)
@@ -187,6 +194,18 @@ class SettingsFragment : Fragment() {
             row.addView(s)
         }
         return row
+    }
+
+    /** Measure the Glide cache off the main thread; re-render only
+     *  when the value actually changed, so this never loops. */
+    private fun refreshCacheSize(dir: File) {
+        lifecycleScope.launch {
+            val mb = withContext(Dispatchers.IO) { dirSize(dir) / (1024 * 1024) }
+            if (mb != cacheUsedMb) {
+                cacheUsedMb = mb
+                if (isAdded) render()
+            }
+        }
     }
 
     private fun dirSize(dir: File): Long {

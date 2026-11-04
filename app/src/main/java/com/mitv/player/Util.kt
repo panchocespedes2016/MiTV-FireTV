@@ -4,13 +4,17 @@ import java.text.Normalizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 object Util {
+    // Compiled once: fold() runs per item on every keystroke of search
+    // and per channel for sports detection; a Regex per call was the
+    // main source of lag on the Stick.
+    private val MARKS = Regex("\\p{Mn}+")
+
     /** Accent/case-insensitive normalization (Windows search behaviour). */
     fun fold(s: String): String {
         val n = Normalizer.normalize(s.lowercase(), Normalizer.Form.NFD)
-        return n.replace(Regex("\\p{Mn}+"), "")
+        return n.replace(MARKS, "")
     }
 
     private val hm = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -31,8 +35,4 @@ object Util {
     }
 
     fun minutesLeft(stopUtc: Long): Long = (stopUtc - System.currentTimeMillis()) / 60000
-
-    private val utcHm = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
-        timeZone = TimeZone.getDefault()
-    }
 }

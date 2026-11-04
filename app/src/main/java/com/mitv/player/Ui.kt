@@ -107,11 +107,6 @@ object Ui {
         return wrap
     }
 
-    fun hintButton(c: Context, key: String, label: String): TextView {
-        val t = text(c, "$key  $label", 13f, R.color.text_faint)
-        return t
-    }
-
     /** Small DPAD-friendly options menu opened with the remote's Menu (☰) key.
      *  The app's own dark panel background is used: the base theme is light. */
     fun showMenuDialog(ctx: Context, title: String, options: List<Pair<String, () -> Unit>>) {
@@ -161,11 +156,6 @@ object Ui {
         return t
     }
 
-    fun spinner(c: Context): ProgressBar = ProgressBar(c).apply {
-        layoutParams = android.widget.FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.CENTER)
-    }
 }
 
 /**

@@ -9,6 +9,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Add / edit a playlist (Xtream or M3U), mirroring Windows PlaylistEditView.
  *  Fields are standard Android text inputs — on the Fire TV they open the
@@ -154,19 +155,26 @@ class PlaylistEditActivity : AppCompatActivity() {
     private fun save(existing: Playlist?) {
         val name = nameInput.text.toString().trim()
         if (name.isEmpty()) { toast("Falta el nombre de la lista"); return }
+        // Validate everything BEFORE touching the stored object: on a
+        // failed validation the list in PlaylistStore must stay as it was.
         val pl = existing ?: Playlist()
-        pl.kind = kind
-        pl.name = name
         if (kind == "xtream") {
-            pl.server = serverInput.text.toString().trim()
-            pl.username = userInput.text.toString().trim()
-            pl.password = passInput.text.toString()
-            if (pl.server.isEmpty() || pl.username.isEmpty()) { toast("Falta servidor o usuario"); return }
-            if (!pl.server.startsWith("http")) pl.server = "http://" + pl.server
+            val server = normalizeServer(serverInput.text.toString())
+            val user = userInput.text.toString().trim()
+            val pass = passInput.text.toString()
+            if (server == null || user.isEmpty()) {
+                toast(if (server == null) "Servidor no válido" else "Falta servidor o usuario"); return
+            }
+            pl.kind = kind; pl.name = name
+            pl.server = server; pl.username = user; pl.password = pass
         } else {
-            pl.url = urlInput.text.toString().trim()
-            pl.epgUrl = epgInput.text.toString().trim()
-            if (pl.url.isEmpty()) { toast("Falta la URL de la lista"); return }
+            val url = normalizeServer(urlInput.text.toString())
+            if (url == null) { toast("URL de la lista no válida"); return }
+            val epgRaw = epgInput.text.toString().trim()
+            val epg = if (epgRaw.isEmpty()) "" else normalizeServer(epgRaw)
+            if (epg == null) { toast("URL de EPG no válida"); return }
+            pl.kind = kind; pl.name = name
+            pl.url = url; pl.epgUrl = epg
         }
         var isNewActive = false
         if (existing == null) {
@@ -178,6 +186,18 @@ class PlaylistEditActivity : AppCompatActivity() {
         }
         toast(if (isNewActive) "Lista guardada y activa. Sincroniza desde Ajustes." else "Lista guardada")
         finish()
+    }
+
+    /** http(s) URL, scheme case-insensitive and added when missing,
+     *  normalized (host lowercased, trailing slash dropped). Null when
+     *  the value cannot be a fetchable URL. */
+    private fun normalizeServer(raw: String): String? {
+        var s = raw.trim()
+        if (s.isEmpty()) return null
+        if (!s.startsWith("http", ignoreCase = true)) s = "http://$s"
+        val http = s.toHttpUrlOrNull() ?: return null
+        if (http.host.isEmpty()) return null
+        return http.toString().trimEnd('/')
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()

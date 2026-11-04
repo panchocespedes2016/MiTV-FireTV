@@ -33,6 +33,8 @@ class PlayerActivity : AppCompatActivity() {
     private var startMs = 0L
     private var osdVisible = true
     private var lastProgressSave = 0L
+    /** Was playing when the activity stopped (Home): resume on return. */
+    private var resumeOnStart = false
 
     private val hideOsd = Runnable { setOsd(false) }
     private val ticker = object : Runnable {
@@ -69,6 +71,9 @@ class PlayerActivity : AppCompatActivity() {
 
         player = ExoPlayer.Builder(this).build().also { p ->
             b.playerView.player = p
+            // Headphones/Bluetooth disconnect pauses instead of playing
+            // on through the TV speakers.
+            p.setHandleAudioBecomingNoisy(true)
             p.setMediaItem(MediaItem.fromUri(url))
             p.prepare()
             if (!isLive && startMs > 5000) p.seekTo(startMs)
@@ -192,9 +197,13 @@ class PlayerActivity : AppCompatActivity() {
                 val ov = overrides[which]
                 val params = p.trackSelectionParameters.buildUpon()
                 if (ov == null) {
+                    params.clearOverridesOfType(type)
                     params.setTrackTypeDisabled(type, true)
                 } else {
                     params.setTrackTypeDisabled(type, false)
+                    // A previous selection of the same type must be
+                    // replaced, not accumulated.
+                    params.clearOverridesOfType(type)
                     params.addOverride(ov)
                 }
                 p.trackSelectionParameters = params.build()
@@ -265,8 +274,17 @@ class PlayerActivity : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (resumeOnStart) { player?.play(); resumeOnStart = false }
+    }
+
     override fun onStop() {
         super.onStop()
+        // Home / app switch: pause (audio kept playing before) and save.
+        val p = player
+        resumeOnStart = p?.isPlaying == true
+        p?.pause()
         saveProgressFinal()
     }
 

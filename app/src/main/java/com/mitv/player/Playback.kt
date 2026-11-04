@@ -6,7 +6,12 @@ import android.content.Intent
 /** Central place that records a play in history and opens the player. */
 object Playback {
 
-    fun playChannel(context: Context, ch: LiveChannel, section: String = "tv") {
+    /** History section for a channel: sports groups belong to Deportes
+     *  no matter which screen opened them (Guía, Inicio, Buscar). */
+    fun sectionFor(ch: LiveChannel): String =
+        if (Util.isSportCategory(ch.group)) "sports" else "tv"
+
+    fun playChannel(context: Context, ch: LiveChannel, section: String = sectionFor(ch)) {
         HistoryStore.recordPlay(WatchEntry(
             key = ch.key, title = ch.name, sub = ch.group, logo = ch.logo,
             kind = "live", section = section, category = ch.group, streamUrl = ch.streamUrl

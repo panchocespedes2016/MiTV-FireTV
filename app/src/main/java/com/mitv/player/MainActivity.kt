@@ -7,10 +7,9 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import com.mitv.player.databinding.ActivityMainBinding
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -42,7 +41,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
     private val tabViews = HashMap<String, TextView>()
     private var currentTab = "home"
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var syncing = false
     /** Last view focused inside the fragment content, for focus restoration
      *  when fast scrolling loses the focus entirely (see onKeyDown). */
@@ -219,7 +217,9 @@ class MainActivity : AppCompatActivity() {
         }
         syncing = true
         if (showToast) Toast.makeText(this, "Sincronizando ${PlaylistStore.active?.name}…", Toast.LENGTH_SHORT).show()
-        scope.launch {
+        // Activity lifecycle scope: a sync that outlives the activity is
+        // cancelled instead of rebuilding a dead tab afterwards.
+        lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) { PlaylistLoader.refresh(includeEpg = true) }
             syncing = false
             if (showToast) Toast.makeText(this@MainActivity,

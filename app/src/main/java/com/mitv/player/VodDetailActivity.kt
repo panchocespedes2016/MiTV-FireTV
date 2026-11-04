@@ -11,19 +11,18 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Detail screens for movies and series.
- *  Movies: header currently in-memory; Xtream info comes lazily from
- *  PlaylistLoader in Holders. */
+/** Detail screens for movies and series. The item is resolved from the
+ *  Intent key against ContentStore (survives process death); the static
+ *  registry is only a fallback for items no longer in the store. */
 object VodDetailRegistry {
     var movie: VodMovie? = null
     var series: SerieItem? = null
@@ -31,8 +30,9 @@ object VodDetailRegistry {
 
 class VodDetailActivity : AppCompatActivity() {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var isSeries = false
+    private var movie: VodMovie? = null
+    private var series: SerieItem? = null
     private var movieFavBtn: TextView? = null
     private var movieWatchedBtn: TextView? = null
     private var seriesFavBtn: TextView? = null
@@ -41,17 +41,29 @@ class VodDetailActivity : AppCompatActivity() {
     companion object {
         fun startMovie(ctx: Context, m: VodMovie) {
             VodDetailRegistry.movie = m; VodDetailRegistry.series = null
-            ctx.startActivity(Intent(ctx, VodDetailActivity::class.java).apply { putExtra("series", false) })
+            ctx.startActivity(Intent(ctx, VodDetailActivity::class.java).apply {
+                putExtra("series", false); putExtra("key", m.key)
+            })
         }
         fun startSeries(ctx: Context, s: SerieItem) {
             VodDetailRegistry.series = s; VodDetailRegistry.movie = null
-            ctx.startActivity(Intent(ctx, VodDetailActivity::class.java).apply { putExtra("series", true) })
+            ctx.startActivity(Intent(ctx, VodDetailActivity::class.java).apply {
+                putExtra("series", true); putExtra("key", s.key)
+            })
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         isSeries = intent.getBooleanExtra("series", false)
+        val key = intent.getStringExtra("key")
+        if (isSeries) {
+            series = key?.let { k -> ContentStore.series.firstOrNull { it.key == k } }
+                ?: VodDetailRegistry.series?.takeIf { key == null || it.key == key }
+        } else {
+            movie = key?.let { k -> ContentStore.movies.firstOrNull { it.key == k } }
+                ?: VodDetailRegistry.movie?.takeIf { key == null || it.key == key }
+        }
         if (isSeries) buildSeries() else buildMovie()
     }
 
@@ -72,7 +84,7 @@ class VodDetailActivity : AppCompatActivity() {
     /** The ☰ key opens a real options menu (before v1.0.8 it did nothing here). */
     private fun showOptionsMenu() {
         if (isSeries) {
-            val s = VodDetailRegistry.series ?: return
+            val s = series ?: return
             Ui.showMenuDialog(this, s.name, listOf(
                 (if (Favorites.isFav(s.key)) "☆ Quitar de Favoritos" else "★ Favorito") to {
                     val now = Favorites.toggle(s.key)
@@ -80,7 +92,7 @@ class VodDetailActivity : AppCompatActivity() {
                 }
             ))
         } else {
-            val m = VodDetailRegistry.movie ?: return
+            val m = movie ?: return
             val entry = HistoryStore.entry(m.key)
             val resume = entry?.inProgress == true
             Ui.showMenuDialog(this, m.name, listOf(
@@ -101,7 +113,7 @@ class VodDetailActivity : AppCompatActivity() {
     // ---------------- Movie ----------------
 
     private fun buildMovie() {
-        val m = VodDetailRegistry.movie ?: run { finish(); return }
+        val m = movie ?: run { finish(); return }
         val ctx = this
         val root = detailRoot()
         val header = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
@@ -157,7 +169,7 @@ class VodDetailActivity : AppCompatActivity() {
 
         if (m.streamId.isNotEmpty()) {
             plotTv.text = "Cargando información…"
-            scope.launch {
+            lifecycleScope.launch {
                 val vi = withContext(Dispatchers.IO) { PlaylistLoader.getVodInfo(m.streamId) }
                 plotTv.text = vi.plot
                 val parts = ArrayList<String>()
@@ -187,7 +199,7 @@ class VodDetailActivity : AppCompatActivity() {
     // ---------------- Series ----------------
 
     private fun buildSeries() {
-        val s = VodDetailRegistry.series ?: run { finish(); return }
+        val s = series ?: run { finish(); return }
         val ctx = this
         val root = detailRoot()
         val header = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
@@ -235,7 +247,7 @@ class VodDetailActivity : AppCompatActivity() {
         setContentView(ScrollView(ctx).apply { addView(root) })
         favBtn.requestFocus()
 
-        scope.launch {
+        lifecycleScope.launch {
             val (info2, episodes) = withContext(Dispatchers.IO) { PlaylistLoader.getSeriesInfo(s.serieId) }
             plotTv.text = info2.plot
             val parts = ArrayList<String>()

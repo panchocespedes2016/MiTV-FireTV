@@ -24,6 +24,19 @@ object EpgStore {
 
     val hasData: Boolean get() = byChannel.isNotEmpty()
 
+    /** Drop all guide data, memory and files (switching or deleting
+     *  lists): a stale EPG from the previous list must never survive. */
+    fun clear() {
+        byChannel = emptyMap()
+        nameToId = emptyMap()
+        ambiguousIds = emptySet()
+        updatedUtc = 0
+        try {
+            File(JsonFiles.dir, FILE).delete()
+            JsonFiles.delete(META)
+        } catch (e: Exception) { }
+    }
+
     fun epgUrlFor(pl: Playlist): String {
         return if (pl.kind == "xtream") {
             val srv = pl.server.trim().trimEnd('/')
@@ -83,10 +96,13 @@ object EpgStore {
     }
 
     private fun saveMeta() {
-        // line1: updatedUtc; following lines: normalizedName \t channelId
+        // line1: updatedUtc; following lines: normalizedName \t channelId;
+        // last line when present: !AMBIG! \t comma-joined ambiguous ids,
+        // so loadCache() can rebuild the ambiguity set too.
         val sb = StringBuilder()
         sb.append(updatedUtc).append('\n')
         for ((k, v) in nameToId) sb.append(k).append('\t').append(v).append('\n')
+        if (ambiguousIds.isNotEmpty()) sb.append("!AMBIG!\t").append(ambiguousIds.joinToString(",")).append('\n')
         JsonFiles.write(META, sb.toString())
     }
 
@@ -97,7 +113,13 @@ object EpgStore {
             val lines = meta.lines()
             for (i in 1 until lines.size) {
                 val parts = lines[i].split('\t')
-                if (parts.size == 2) map[parts[0]] = parts[1]
+                if (parts.size == 2) {
+                    if (parts[0] == "!AMBIG!") {
+                        ambiguousIds = parts[1].split(',').filter { it.isNotEmpty() }.toSet()
+                    } else {
+                        map[parts[0]] = parts[1]
+                    }
+                }
             }
             nameToId = map
         } catch (e: Exception) { }

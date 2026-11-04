@@ -7,6 +7,18 @@
         <item name="android:fontFamily">sans</item>
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:statusBarColor">@color/bg</item>
+        <!-- The base theme is light, so system AlertDialogs (Settings
+             actions, player track picker) came out white; force them
+             dark. Both namespaces: android.app and androidx builders. -->
+        <item name="android:alertDialogTheme">@style/Theme.MiTV.AlertDialog</item>
+        <item name="alertDialogTheme">@style/Theme.MiTV.AlertDialog</item>
+    </style>
+    <style name="Theme.MiTV.AlertDialog" parent="Theme.AppCompat.Dialog.Alert">
+        <item name="android:windowBackground">@color/panel</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_dim</item>
+        <item name="colorAccent">@color/accent</item>
     </style>
     <style name="Theme.MiTV.Fullscreen" parent="Theme.MiTV">
         <item name="android:windowFullscreen">true</item>

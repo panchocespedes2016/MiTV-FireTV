@@ -29,7 +29,24 @@ object Net {
     fun getJsonArray(url: String): JSONArray {
         val txt = getText(url).trim()
         if (txt.startsWith("[")) return JSONArray(txt)
-        // Some panels return an object for empty lists; treat as empty.
+        if (txt.startsWith("{")) {
+            // Some panels answer list calls with an object. An explicit
+            // auth denial or error message must fail the sync loudly
+            // instead of reporting "0 canales" as success; a bare
+            // object (empty list) keeps the old empty result.
+            val obj = JSONObject(txt)
+            val ui = obj.optJSONObject("user_info")
+            if (ui != null) {
+                val auth = ui.opt("auth")
+                if (!(auth == 1 || auth == "1" || auth == true)) {
+                    val st = ui.str("status").ifEmpty { "denegado" }
+                    throw RuntimeException("Panel: acceso denegado ($st)")
+                }
+            }
+            val err = obj.optString("message").ifEmpty { obj.optString("error") }
+            if (err.isNotEmpty()) throw RuntimeException("Panel: $err")
+            return JSONArray()
+        }
         return JSONArray()
     }
 
@@ -43,6 +60,11 @@ object Net {
     }
 
     fun esc(s: String): String = URLEncoder.encode(s, "UTF-8")
+
+    /** Percent-encoding for a URL *path segment* (Xtream /live/, /movie/
+     *  and /series/ URLs): unlike query encoding, a space must be %20,
+     *  never '+', which is a literal plus in a path. */
+    fun escPath(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 }
 
 /** Small JSON helpers tolerant of string/number/bool Xtream fields. */

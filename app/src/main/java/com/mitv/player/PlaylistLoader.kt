@@ -9,8 +9,22 @@ object PlaylistLoader {
 
     data class Result(val ok: Boolean, val message: String)
 
+    // One refresh at a time: the startup refresh (MiTVApp) and the manual
+    // one (MainActivity/SettingsFragment) share this guard, so two runs
+    // can never interleave writes to ContentStore.
+    private val refreshGuard = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun refresh(includeEpg: Boolean = true): Result {
         val pl = PlaylistStore.active ?: return Result(false, "No hay lista activa")
+        if (!refreshGuard.compareAndSet(false, true)) return Result(false, "Ya hay una sincronización en curso")
+        try {
+            return refreshLocked(pl, includeEpg)
+        } finally {
+            refreshGuard.set(false)
+        }
+    }
+
+    private fun refreshLocked(pl: Playlist, includeEpg: Boolean): Result {
         return try {
             if (pl.kind == "xtream") loadXtream(pl) else loadM3u(pl)
             ContentStore.sourceName = pl.name
@@ -29,9 +43,14 @@ object PlaylistLoader {
 
     private fun loadXtream(pl: Playlist) {
         val srv = pl.server.trim().trimEnd('/')
-        val u = Net.esc(pl.username); val p = Net.esc(pl.password)
-        val auth = "username=$u&password=$p"
+        // Query params use form encoding; stream paths use path-segment
+        // encoding (a space in the password is %20 in the path, never +).
+        val qu = Net.esc(pl.username); val qp = Net.esc(pl.password)
+        val u = Net.escPath(pl.username); val p = Net.escPath(pl.password)
+        val auth = "username=$qu&password=$qp"
         val api = "$srv/player_api.php?$auth"
+
+        checkAuth(api)
 
         val liveCats = categories("$api&action=get_live_categories")
         val vodCats = categories("$api&action=get_vod_categories")
@@ -95,6 +114,19 @@ object PlaylistLoader {
         ContentStore.channels = channels
         ContentStore.movies = movies
         ContentStore.series = series
+    }
+
+    /** Fail fast on an explicit credential denial, before the list
+     *  calls can report "0 canales" as success. A panel that answers
+     *  the bare call with anything else is left for the list calls. */
+    private fun checkAuth(api: String) {
+        val root = try { Net.getJsonObject(api) } catch (e: Exception) { return }
+        val ui = root.optJSONObject("user_info") ?: return
+        val auth = ui.opt("auth")
+        if (!(auth == 1 || auth == "1" || auth == true)) {
+            val st = ui.str("status").ifEmpty { "denegado" }
+            throw RuntimeException("Panel: acceso denegado ($st)")
+        }
     }
 
     private fun categories(url: String): Map<String, String> {

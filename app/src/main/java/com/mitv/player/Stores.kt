@@ -160,8 +160,28 @@ object HistoryStore {
     }
 
     @Synchronized fun save() {
+        JsonFiles.write(FILE, snapshotJson())
+    }
+
+    private fun snapshotJson(): String {
         val arr = JSONArray(); map.values.forEach { arr.put(it.toJson()) }
-        JsonFiles.write(FILE, arr.toString())
+        return arr.toString()
+    }
+
+    // Disk writes run on a single background thread, coalesced: the
+    // 5 s progress ticker must never do file I/O on the main thread.
+    // Snapshots are taken under the store lock, in FIFO order, so a
+    // later write always holds newer-or-equal data.
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile private var saveQueued = false
+    private fun scheduleSave() {
+        if (saveQueued) return
+        saveQueued = true
+        writer.execute {
+            saveQueued = false
+            val json = synchronized(this@HistoryStore) { snapshotJson() }
+            JsonFiles.write(FILE, json)
+        }
     }
 
     @Synchronized
@@ -174,16 +194,17 @@ object HistoryStore {
             updatedUtc = System.currentTimeMillis()
         )
         map.remove(entry.key); map[entry.key] = merged
-        save()
+        scheduleSave()
     }
 
     @Synchronized
     fun updateProgress(key: String, positionMs: Long, durationMs: Long) {
         val e = map[key] ?: return
         e.positionMs = positionMs; e.durationMs = durationMs
-        e.updatedUtc = System.currentTimeMillis()
-        // do not move position in history ordering for progress ticks
-        save()
+        // do not move position in history ordering for progress ticks:
+        // updatedUtc only changes on recordPlay, so "recent" stays in
+        // open order and the 5 s ticker does not reshuffle the list.
+        scheduleSave()
     }
 
     fun entry(key: String): WatchEntry? = map[key]
