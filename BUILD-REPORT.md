@@ -300,3 +300,92 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   the script never entered Live TV (shots show the Home screen), so no
   claim is made for channels; the user's own live test with the remote
   is the pending ground truth.
+
+## Addendum 2026-11-04 (v1.0.14, installed on the Stick)
+
+- Authorized by the user 2026-11-04 12:10 EST after a code-only
+  comparison (no code touched) of Live/Guide vs Vod adapters, plus
+  research into the Lumora player (native Kotlin, Views/XML, Media3,
+  Xtream, Fire TV remote): holder-owned views, ListAdapter.submitList
+  with background diffing, explicit focus exits wired by ID, explicit
+  focus restore. Scope: (1) holder-owned rows with zero view creation
+  at bind in TV/Deportes/Guia (mirror the Vod pattern); (2) list
+  changes by diff, not a new adapter per category; (3) focus exits
+  wired by name (top-row Up -> its tab); (4) keep the existing restore
+  layers; (5) NEW, user requirement: BACK inside any column goes to
+  its parent (category or menu/tab). Movies/Series rows were already
+  standard, so changes there were limited to the adapter migration +
+  BACK handling, per his "no toques nada ahi" order. Channel list
+  stays one column (his "columnas" was a slip of his own).
+- Files: LiveFragment, VodFragment, GuideFragment, HomeFragment,
+  SearchFragment, VodDetailActivity, MainActivity (BackToParentHandler
+  + isDescendantOf), Ui.kt (machinery unchanged), versionCode 15 /
+  versionName 1.0.14.
+- Verification: FIRST install caught the agent's own bug — the
+  ListAdapter migration never submitted the categories list
+  (catAdapter created and set, submitList never called) so the
+  categories column was empty. Fixed (submitList in onCreate, Live
+  and Vod), rebuilt, reinstalled (clean APK md5
+  19ab5d9d48797696c360fc7b55069202, verified by dumpsys 15/1.0.14).
+  Second run: entry OK (focus on channel 437, preview populated),
+  but after 40 fast Downs the escape to Inicio PERSISTED (Home
+  screen, Jujutsu Kaisen card focused). BACK card->tab verified on
+  Home. Movies/Guide BACK legs INVALID: a second BACK on the Home
+  tab exited the app to the Fire TV launcher, so the rest of that
+  script navigated the launcher, not MiTV. BACK on the tab bar at
+  Inicio exits the app (default Android behavior) — observed twice,
+  flagged to the user.
+- Diagnosis, proven by live focus logging (the Stick records no
+  Debug lines device-wide; Log.i + live-streamed logcat required; the
+  256 KiB main buffer rotates fast): every Down search WORKED
+  (436->437->438->439->440, one via the stock manager at a scroll
+  boundary), then 34 ms after the last Down, with NO key pressed and
+  no onFocusSearchFailed/trap/restore line, focus went null and the
+  framework fallback landed on the first focusable view, the Inicio
+  tab, whose focus listener switched the screen. The escape is a
+  detach-driven focus loss between keys, not a search failure; the
+  search layers never run. The bind-churn theory is dead as the sole
+  cause: holder-owned rows + diff updates did not change the symptom.
+  A temporary instrumented build (md5 7cb33b90...) was left on the
+  Stick during diagnosis; it was replaced by the clean 1.0.15 build.
+  Instrumentation was removed from the source before committing.
+
+## Addendum 2026-11-04 (v1.0.15, installed on the Stick)
+
+- Fix for the proven mechanism, in MainActivity only: a tab switches
+  screens ONLY when its focus gain is explicit. A tabFocusExpected
+  flag is set before every explicit tab focus request (focusTab,
+  selectTab with requestFocus, Left/Right tab moves, tab clicks,
+  onCreate home focus, null-focus restore); the tab focus listener
+  consumes it. A gain without the flag is a fallback gain: the
+  screen does NOT switch; focus goes back to the content that lost
+  it (last focused content view if still attached, else the
+  fragment's FocusRestorable restore, else the current tab keeps
+  focus). Gains while a dialog is showing are left alone. Audit:
+  every tabViews requestFocus in the app goes through a flag-setting
+  path; all other requestFocus calls target content views.
+  versionCode 16 / versionName 1.0.15, clean APK md5
+  23c379d8c698ad2a0fc93115bc37eed0 (6,0 MB range), verified by
+  dumpsys 16/1.0.15.
+- Verification on the Stick (v115 runs, all 12 captures read): entry
+  OK (focus on channel 437, preview with EPG + video). After 40 fast
+  Downs the focus STAYED in Live TV on channel 477 (437+40 exactly),
+  preview playing video — THE ESCAPE IS FIXED at ADB speed. BACK
+  legs all verified: channels->categories (Todo focused),
+  categories->tab (TV en vivo focused), movies grid->categories
+  (Historial), categories->tab (Peliculas), guide list->tab (Guia),
+  Home card->tab (Inicio). Left/Right tab switching intact (4x Left
+  from Guia landed on the TV en vivo tab with the Live screen).
+  Caveats: (1) the first v115 run's entry failed on a 3 s cold-start
+  wait after a fresh install (keys navigated Home); with a 6 s wait
+  one Right enters Live TV — the entry script needs the longer wait
+  on fresh installs. (2) In one mid-session capture (v115-b1) the
+  channel rows showed "Sin informacion" with empty bars; the very
+  next fresh entry (v115-e1) showed EPG normally, so it was
+  transient and was not investigated; flagged here for the record.
+  (3) ADB keys are slower than remote repeat and can be lost under
+  preview load: the user's own remote test remains the ground truth.
+- Search BACK mapping (judgment call, flagged to the user in the
+  1.0.14 report): results go to the tab/menu, not back to the input.
+- Commits: 44f7c32 (v1.0.14, instrumentation removed) and this
+  version. Both pushed to GitHub with this addendum.

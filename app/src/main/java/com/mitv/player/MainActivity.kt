@@ -47,6 +47,32 @@ class MainActivity : AppCompatActivity() {
     /** Last view focused inside the fragment content, for focus restoration
      *  when fast scrolling loses the focus entirely (see onKeyDown). */
     private var lastContentFocus: View? = null
+    /** Set immediately before every EXPLICIT tab focus request (focusTab,
+     *  selectTab with requestFocus, Left/Right tab moves, tab clicks).
+     *  A tab that gains focus WITHOUT it got there by fallback — the
+     *  framework returning focus to the first focusable view after the
+     *  focused row was detached between keys (proven 2026-11-04 by live
+     *  focus logging: focus went null -> Inicio tab 34 ms after the last
+     *  Down, with no key pressed). Such a gain must never switch screens;
+     *  focus goes back to the content instead. */
+    private var tabFocusExpected = false
+
+    private fun clearTabFocusFlagSoon() {
+        b.tabBar.post { tabFocusExpected = false }
+    }
+
+    /** Send focus back to the content view that lost it (last focused
+     *  content view, else the fragment's position restore); only when
+     *  there is no content view left does the current tab keep focus. */
+    private fun restoreContentFocus() {
+        val restore = lastContentFocus?.takeIf { it.isAttachedToWindow }
+        if (restore != null) { restore.requestFocus(); return }
+        val frag = supportFragmentManager.findFragmentById(R.id.content)
+        if (frag is FocusRestorable && frag.restoreFocus()) return
+        tabFocusExpected = true
+        tabViews[currentTab]?.requestFocus()
+        clearTabFocusFlagSoon()
+    }
 
     companion object {
         val TABS = listOf(
@@ -84,13 +110,26 @@ class MainActivity : AppCompatActivity() {
                 isFocusable = true
                 isClickable = true
                 background = getDrawable(R.drawable.tab_bg)
-                setOnClickListener { selectTab(key, requestFocus = false) }
+                setOnClickListener {
+                    tabFocusExpected = true
+                    selectTab(key, requestFocus = false)
+                    clearTabFocusFlagSoon()
+                }
                 setOnFocusChangeListener { view, hasFocus ->
                     if (hasFocus) {
-                        selectTab(key, requestFocus = false)
-                        b.tabScroll.post {
-                            b.tabScroll.smoothScrollTo(
-                                (view.left - Ui.dp(this@MainActivity, 24)).coerceAtLeast(0), 0)
+                        val expected = tabFocusExpected
+                        tabFocusExpected = false
+                        if (expected) {
+                            selectTab(key, requestFocus = false)
+                            b.tabScroll.post {
+                                b.tabScroll.smoothScrollTo(
+                                    (view.left - Ui.dp(this@MainActivity, 24)).coerceAtLeast(0), 0)
+                            }
+                        } else if (!Ui.dialogShowing) {
+                            // Fallback gain (focused row detached between
+                            // keys): never switch screens on it. Send focus
+                            // back to the content that lost it.
+                            restoreContentFocus()
                         }
                     }
                 }
@@ -100,7 +139,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         selectTab("home", requestFocus = false)
+        tabFocusExpected = true
         tabViews["home"]?.requestFocus()
+        clearTabFocusFlagSoon()
 
         if (PlaylistStore.active == null) {
             Toast.makeText(this, "Agrega tu primera lista en Ajustes", Toast.LENGTH_LONG).show()
@@ -122,7 +163,9 @@ class MainActivity : AppCompatActivity() {
 
     /** Move remote focus to a tab (selects it via the focus listener). */
     fun focusTab(key: String) {
+        tabFocusExpected = true
         tabViews[key]?.requestFocus()
+        clearTabFocusFlagSoon()
     }
 
     fun selectTab(key: String, requestFocus: Boolean) {
@@ -147,7 +190,11 @@ class MainActivity : AppCompatActivity() {
         supportFragmentManager.beginTransaction()
             .replace(R.id.content, fragment)
             .commit()
-        if (requestFocus) tabViews[key]?.requestFocus()
+        if (requestFocus) {
+            tabFocusExpected = true
+            tabViews[key]?.requestFocus()
+            clearTabFocusFlagSoon()
+        }
     }
 
     private fun updateTabStyles() {
@@ -219,14 +266,22 @@ class MainActivity : AppCompatActivity() {
                 if (frag is FocusRestorable && frag.restoreFocus()) return true
                 val restore = lastContentFocus?.takeIf { it.isAttachedToWindow }
                 if (restore != null) restore.requestFocus()
-                else tabViews[currentTab]?.requestFocus()
+                else {
+                    tabFocusExpected = true
+                    tabViews[currentTab]?.requestFocus()
+                    clearTabFocusFlagSoon()
+                }
                 return true
             }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
                 val idx = TABS.indexOfFirst { tabViews[it.first] === focused }
                 if (idx >= 0) {
                     val next = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) idx + 1 else idx - 1
-                    if (next in TABS.indices) tabViews[TABS[next].first]?.requestFocus()
+                    if (next in TABS.indices) {
+                        tabFocusExpected = true
+                        tabViews[TABS[next].first]?.requestFocus()
+                        clearTabFocusFlagSoon()
+                    }
                     return true
                 }
             }
