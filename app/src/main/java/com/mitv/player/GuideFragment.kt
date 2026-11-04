@@ -34,7 +34,7 @@ class GuideFragment : Fragment() {
         }
         val list = RecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            layoutManager = LinearLayoutManager(ctx)
+            layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
         list.adapter = GuideAdapter(withEpg)
         root.addView(list)

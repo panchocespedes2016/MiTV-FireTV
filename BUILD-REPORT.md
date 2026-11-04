@@ -208,3 +208,35 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   the exact reported path: Right (TV tab) -> Down (Historial) -> Down x2
   (Todo) -> Right (channel 2, preview playing) -> Down (channel 3)
   (v109-u2/u4/u5/u6.png).
+
+## Addendum 2026-10-31 (v1.0.10, installed on the Stick)
+
+- Screensaver/sleep cut playback: Fire TV idle timers fired while video
+  played because nothing held the screen on. Fix: PlayerActivity holds
+  FLAG_KEEP_SCREEN_ON while playing (released on pause/destroy) and the
+  Live preview PlayerView sets keepScreenOn. Installed 2026-10-31
+  (versionCode 11). The long idle proof (screensaver not appearing after
+  5+ minutes of playback) was never confirmed on screen by the agent.
+
+## Addendum 2026-11-04 (v1.0.11, installed on the Stick)
+
+- Fast scrolling down the channel lists jumped back to Inicio. Cause: the
+  focused row was recycled before its replacement was laid out, focus was
+  lost, and the system's fallback search landed on the first tab (Inicio),
+  whose focus listener switches the whole screen. The lost-focus recovery
+  in MainActivity only covered Left/Right. Fix, two layers: (1) new
+  KeepFocusLinearLayoutManager / KeepFocusGridLayoutManager (Ui.kt) whose
+  onFocusSearchFailed focuses the edge visible child instead of letting
+  the search escape the list; applied to every scrolling list (Live
+  categories/channels, Vod categories/grid, Guide, episode list);
+  (2) MainActivity remembers the last content-focused view and, on any
+  DPAD direction with focus lost, restores it (or the current tab when it
+  is gone), never while a menu dialog owns the focus (Ui.dialogShowing).
+  Verified on the Stick: normal path tab -> categories -> channels with
+  preview playing, 40 fast Downs in channels, fast Downs in categories
+  (Live and Movies), grid entry and fast Downs in the grid, Up back to
+  the tab row — no jump to Inicio in any run (v111-w2/w3/w4/x1/z1/z2).
+  Known edge, observed: on the fastest scrolling the focus can still be
+  lost when the focused row is recycled; the restore then falls back to
+  the tab and scrolling resumes from the top of the category list instead
+  of the previous position. A position-aware restore is the follow-up.

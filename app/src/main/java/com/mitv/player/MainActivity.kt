@@ -21,6 +21,9 @@ class MainActivity : AppCompatActivity() {
     private var currentTab = "home"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var syncing = false
+    /** Last view focused inside the fragment content, for focus restoration
+     *  when fast scrolling loses the focus entirely (see onKeyDown). */
+    private var lastContentFocus: View? = null
 
     companion object {
         val TABS = listOf(
@@ -39,6 +42,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+
+        b.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
+            if (newFocus != null && !tabViews.values.contains(newFocus) && isInContent(newFocus)) {
+                lastContentFocus = newFocus
+            }
+        }
 
         for ((key, label) in TABS) {
             val tv = TextView(this).apply {
@@ -75,6 +84,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** True when [v] lives inside the fragment container (not the tab bar). */
+    private fun isInContent(v: View): Boolean {
+        var p = v.parent
+        while (p != null) {
+            if ((p as? View)?.id == R.id.content) return true
+            p = (p as? View)?.parent
+        }
+        return false
+    }
+
     /** View id of a tab, for nextFocusUp wiring from fragment content. */
     fun tabId(key: String): Int = tabViews[key]?.id ?: View.NO_ID
 
@@ -89,6 +108,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         currentTab = key
+        lastContentFocus = null
         updateTabStyles()
         val fragment: Fragment = when (key) {
             "home" -> HomeFragment()
@@ -153,20 +173,29 @@ class MainActivity : AppCompatActivity() {
         // moves explicitly to the neighbouring tab instead of relying on
         // focus-search geometry (which proved unreliable on Fire OS: after a
         // fragment swap, later Right presses stopped moving the focus).
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
             val focused = currentFocus
-            val idx = TABS.indexOfFirst { tabViews[it.first] === focused }
-            if (idx >= 0) {
-                val next = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) idx + 1 else idx - 1
-                if (next in TABS.indices) tabViews[TABS[next].first]?.requestFocus()
+            // Focus got lost entirely (observed on Fire OS after some fragment
+            // swaps, and when fast scrolling recycles the focused row before
+            // its replacement is laid out): without this, the system's
+            // fallback focus search jumps back to the first tab (Inicio),
+            // whose focus listener switches the whole screen. Restore the
+            // last content view instead; never run while a dialog owns the
+            // focus. Only when that view is gone too, fall back to the tab.
+            if (focused == null && !Ui.dialogShowing) {
+                val restore = lastContentFocus?.takeIf { it.isAttachedToWindow }
+                if (restore != null) restore.requestFocus()
+                else tabViews[currentTab]?.requestFocus()
                 return true
             }
-            // Focus got lost entirely (observed on Fire OS after some fragment
-            // swaps): without this, the system's fallback focus search jumps
-            // back to the first tab (Inicio). Restore focus to the current tab.
-            if (focused == null) {
-                tabViews[currentTab]?.requestFocus()
-                return true
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                val idx = TABS.indexOfFirst { tabViews[it.first] === focused }
+                if (idx >= 0) {
+                    val next = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) idx + 1 else idx - 1
+                    if (next in TABS.indices) tabViews[TABS[next].first]?.requestFocus()
+                    return true
+                }
             }
         }
         return super.onKeyDown(keyCode, event)

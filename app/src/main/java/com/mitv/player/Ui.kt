@@ -9,10 +9,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 
 object Ui {
+    /** True while a Ui.showMenuDialog dialog is open (it owns the focus). */
+    var dialogShowing = false
+        private set
     fun dp(c: Context, v: Int): Int = (v * c.resources.displayMetrics.density).toInt()
 
     fun text(c: Context, s: String, sizeSp: Float, colorRes: Int = R.color.text,
@@ -141,6 +147,8 @@ object Ui {
         dialog.window?.setBackgroundDrawable(
             android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
         dialog.window?.setLayout(dp(ctx, 460), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.setOnDismissListener { dialogShowing = false }
+        dialogShowing = true
         dialog.show()
         first?.requestFocus()
     }
@@ -157,5 +165,42 @@ object Ui {
         layoutParams = android.widget.FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER)
+    }
+}
+
+/**
+ * LayoutManagers that never let DPAD focus escape the list when a focus
+ * search fails. Fast scrolling recycles the focused row before the next one
+ * is laid out; the default search then falls through to the rest of the
+ * window, and the system's fallback lands on the first tab (Inicio), whose
+ * focus listener switches the whole screen. Focusing the edge visible child
+ * instead keeps the focus inside the list. Only UP/DOWN are contained:
+ * LEFT/RIGHT must still escape (categories <-> channels, grid <-> sidebar).
+ */
+class KeepFocusLinearLayoutManager(ctx: Context) : LinearLayoutManager(ctx) {
+    override fun onFocusSearchFailed(
+        focused: View, direction: Int,
+        recycler: RecyclerView.Recycler, state: RecyclerView.State
+    ): View? {
+        val pos = when (direction) {
+            View.FOCUS_DOWN -> findLastVisibleItemPosition()
+            View.FOCUS_UP -> findFirstVisibleItemPosition()
+            else -> return null
+        }
+        return if (pos != RecyclerView.NO_POSITION) findViewByPosition(pos) else null
+    }
+}
+
+class KeepFocusGridLayoutManager(ctx: Context, spanCount: Int) : GridLayoutManager(ctx, spanCount) {
+    override fun onFocusSearchFailed(
+        focused: View, direction: Int,
+        recycler: RecyclerView.Recycler, state: RecyclerView.State
+    ): View? {
+        val pos = when (direction) {
+            View.FOCUS_DOWN -> findLastVisibleItemPosition()
+            View.FOCUS_UP -> findFirstVisibleItemPosition()
+            else -> return null
+        }
+        return if (pos != RecyclerView.NO_POSITION) findViewByPosition(pos) else null
     }
 }

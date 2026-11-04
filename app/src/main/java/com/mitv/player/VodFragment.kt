@@ -47,14 +47,14 @@ class VodFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 250), ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = Ui.dp(ctx, 14)
             }
-            layoutManager = LinearLayoutManager(ctx)
+            layoutManager = KeepFocusLinearLayoutManager(ctx)
             setBackgroundColor(ctx.getColor(R.color.panel))
             setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
         }
         root.addView(catList)
         grid = RecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-            layoutManager = GridLayoutManager(ctx, 5)
+            layoutManager = KeepFocusGridLayoutManager(ctx, 5)
             clipToPadding = false
             setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
         }

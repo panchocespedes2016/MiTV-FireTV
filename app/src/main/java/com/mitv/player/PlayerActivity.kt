@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -46,6 +47,11 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(b.root)
+        // Fire TV's idle timers (screensaver, then sleep) fire while video
+        // plays unless the foreground window holds this flag: the Stick
+        // counts only remote presses as activity. Without it the screensaver
+        // covers playback and sleep later cuts audio entirely.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         val url = intent.getStringExtra("url") ?: run { finish(); return }
         isLive = intent.getBooleanExtra("live", false)
@@ -74,6 +80,9 @@ class PlayerActivity : AppCompatActivity() {
                 }
                 override fun onIsPlayingChanged(playing: Boolean) {
                     b.btnPlay.text = if (playing) "⏸ Pausa" else "▶ Reproducir"
+                    // Paused video is not watching: let the Stick sleep again.
+                    if (playing) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
             })
         }
@@ -262,6 +271,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         handler.removeCallbacksAndMessages(null)
         saveProgressFinal()
         player?.release()

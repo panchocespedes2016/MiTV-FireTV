@@ -218,7 +218,7 @@ class VodDetailActivity : AppCompatActivity() {
         root.addView(status)
         val epList = RecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 520)).apply { topMargin = Ui.dp(ctx, 12) }
-            layoutManager = LinearLayoutManager(ctx)
+            layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
         root.addView(epList)
         setContentView(ScrollView(ctx).apply { addView(root) })

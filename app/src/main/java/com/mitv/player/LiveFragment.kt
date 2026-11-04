@@ -79,7 +79,7 @@ class LiveFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 215), ViewGroup.LayoutParams.MATCH_PARENT).apply {
                 marginEnd = Ui.dp(ctx, 14)
             }
-            layoutManager = LinearLayoutManager(ctx)
+            layoutManager = KeepFocusLinearLayoutManager(ctx)
             setBackgroundColor(ctx.getColor(R.color.panel))
             setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
         }
@@ -87,7 +87,7 @@ class LiveFragment : Fragment() {
 
         chanList = RecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-            layoutManager = LinearLayoutManager(ctx)
+            layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
         root.addView(chanList)
 
@@ -102,6 +102,9 @@ class LiveFragment : Fragment() {
         }
         playerView = PlayerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 201))
+            // Same Fire TV idle-timer hazard as PlayerActivity: the muted
+            // preview is video too. Applies only while this view is attached.
+            keepScreenOn = true
             useController = false
             setBackgroundColor(0xFF000000.toInt())
         }
