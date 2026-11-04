@@ -1,6 +1,7 @@
 package com.mitv.player
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -12,7 +13,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 /** Guía v1: per-channel now/next list (a full time-grid is deferred — see
  *  BUILD-REPORT). Rows play the channel on OK. */
-class GuideFragment : Fragment(), FocusRestorable {
+class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
     private lateinit var guideList: RecyclerView
     private var focusedPos = 0
@@ -27,6 +28,16 @@ class GuideFragment : Fragment(), FocusRestorable {
         guideList.post {
             guideList.findViewHolderForAdapterPosition(focusedPos)?.itemView?.requestFocus()
         }
+        return true
+    }
+
+    /** Back climbs one level: the guide list -> the tab bar (no categories). */
+    override fun handleBack(): Boolean {
+        if (!::guideList.isInitialized) return false
+        val act = activity as? MainActivity ?: return false
+        val focused = act.currentFocus ?: return false
+        if (!isDescendantOf(focused, guideList)) return false
+        act.focusTab("guide")
         return true
     }
 
@@ -62,6 +73,10 @@ class GuideFragment : Fragment(), FocusRestorable {
         RecyclerView.Adapter<GuideAdapter.Holder>() {
         inner class Holder(val row: LinearLayout) : RecyclerView.ViewHolder(row) {
             val logoFrame: ViewGroup = row.getChildAt(0) as ViewGroup
+            // Holder-owned logo view: Glide loads into the SAME target on
+            // every bind, so a previous load is cancelled instead of landing
+            // late on a reused row.
+            val logoIv: android.widget.ImageView = logoFrame.getChildAt(0) as android.widget.ImageView
             val info: LinearLayout = row.getChildAt(1) as LinearLayout
             val nameTv: TextView = info.getChildAt(0) as TextView
             val nowTv: TextView = info.getChildAt(1) as TextView
@@ -83,6 +98,11 @@ class GuideFragment : Fragment(), FocusRestorable {
                 layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 54), Ui.dp(ctx, 54)).apply { marginEnd = Ui.dp(ctx, 14) }
                 background = ctx.getDrawable(R.drawable.logo_tile)
             }
+            logoFrame.addView(android.widget.ImageView(ctx).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
+            })
             row.addView(logoFrame)
             val info = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
@@ -94,33 +114,40 @@ class GuideFragment : Fragment(), FocusRestorable {
             val nextTv = Ui.text(ctx, "", 13f, R.color.text_faint).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
             info.addView(nextTv)
             row.addView(info)
-            return Holder(row)
-        }
-        override fun getItemCount() = items.size
-        override fun onBindViewHolder(h: Holder, pos: Int) {
-            val (ch, now, next) = items[pos]
-            val ctx = h.row.context
-            h.logoFrame.removeAllViews()
-            val iv = android.widget.ImageView(ctx).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
-            }
-            h.logoFrame.addView(iv)
-            if (ch.logo.isNotBlank()) com.bumptech.glide.Glide.with(ctx).load(ch.logo)
-                .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.AUTOMATIC).fitCenter().into(iv)
-            h.nameTv.text = ch.name
-            val total = (now.stopUtc - now.startUtc).coerceAtLeast(1)
-            val done = ((System.currentTimeMillis() - now.startUtc).coerceIn(0, total) * 100 / total).toInt()
-            h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
-            h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
-            h.row.setOnFocusChangeListener { _, hasFocus ->
+            val h = Holder(row)
+            row.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
                     val p = h.bindingAdapterPosition
                     if (p != RecyclerView.NO_POSITION) focusedPos = p
                 }
             }
-            h.row.setOnClickListener { Playback.playChannel(ctx, ch) }
+            row.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p != RecyclerView.NO_POSITION) Playback.playChannel(ctx, items[p].first)
+            }
+            row.setOnKeyListener { _, keyCode, ev ->
+                if (ev.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                    h.bindingAdapterPosition == 0) {
+                    (activity as? MainActivity)?.focusTab("guide")
+                    true
+                } else false
+            }
+            return h
+        }
+        override fun getItemCount() = items.size
+        override fun onBindViewHolder(h: Holder, pos: Int) {
+            val (ch, now, next) = items[pos]
+            if (ch.logo.isNotBlank()) com.bumptech.glide.Glide.with(h.logoIv.context).load(ch.logo)
+                .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.AUTOMATIC).fitCenter().into(h.logoIv)
+            else {
+                com.bumptech.glide.Glide.with(h.logoIv.context).clear(h.logoIv)
+                h.logoIv.setImageDrawable(null)
+            }
+            h.nameTv.text = ch.name
+            val total = (now.stopUtc - now.startUtc).coerceAtLeast(1)
+            val done = ((System.currentTimeMillis() - now.startUtc).coerceIn(0, total) * 100 / total).toInt()
+            h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
+            h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
         }
     }
 }

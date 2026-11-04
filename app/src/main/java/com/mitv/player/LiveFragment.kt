@@ -16,17 +16,33 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+
+/** Diff callbacks: list updates are diffed off the main thread and dispatched
+ *  per item (ListAdapter), instead of swapping the whole adapter, which
+ *  detached every row. Identity is the stable key; contents are data-class
+ *  equality. */
+private val catItemDiff = object : DiffUtil.ItemCallback<LiveFragment.CatItem>() {
+    override fun areItemsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a.id == b.id
+    override fun areContentsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a == b
+}
+
+private val channelDiff = object : DiffUtil.ItemCallback<LiveChannel>() {
+    override fun areItemsTheSame(a: LiveChannel, b: LiveChannel) = a.key == b.key
+    override fun areContentsTheSame(a: LiveChannel, b: LiveChannel) = a == b
+}
 
 /** TV en vivo (and Deportes with sportsOnly=true), per the approved mockup.
  *  Left: categories with counts (Historial, Favoritos, Todo, groups).
  *  Center: channel rows with EPG now + progress. Right: muted preview after
  *  a short focus dwell, now/next details. OK = fullscreen, Menu = favorite. */
 @OptIn(UnstableApi::class)
-class LiveFragment : Fragment(), FocusRestorable {
+class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
     private var sportsOnly = false
 
@@ -45,6 +61,11 @@ class LiveFragment : Fragment(), FocusRestorable {
     private var pendingPreview: Runnable? = null
 
     private var categories: List<CatItem> = emptyList()
+    private lateinit var catAdapter: CatAdapter
+    private lateinit var channelAdapter: ChannelAdapter
+    // True once the first applyCategory() has run, so the early-return there
+    // never skips the initial load (selectedCat starts empty).
+    private var categoriesApplied = false
     // Empty until the first applyCategory() runs, so the early-return there
     // never skips the initial load.
     private var selectedCat = ""
@@ -79,6 +100,30 @@ class LiveFragment : Fragment(), FocusRestorable {
             return true
         }
         return false
+    }
+
+    /** Back climbs one level: channels -> categories, categories -> tab bar. */
+    override fun handleBack(): Boolean {
+        if (!::chanList.isInitialized || !::catList.isInitialized) return false
+        val act = activity as? MainActivity ?: return false
+        val focused = act.currentFocus ?: return false
+        return when {
+            isDescendantOf(focused, chanList) -> { focusCatRow(); true }
+            isDescendantOf(focused, catList) -> {
+                act.focusTab(if (sportsOnly) "sports" else "live"); true
+            }
+            else -> false
+        }
+    }
+
+    private fun focusCatRow() {
+        val count = catList.adapter?.itemCount ?: 0
+        if (count == 0) return
+        val pos = focusedCatPos.coerceIn(0, count - 1)
+        catList.scrollToPosition(pos)
+        catList.post {
+            catList.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+        }
     }
 
     data class CatItem(val id: String, val label: String, val count: Int)
@@ -154,7 +199,11 @@ class LiveFragment : Fragment(), FocusRestorable {
         root.addView(panel)
 
         buildCategories()
-        catList.adapter = CatAdapter()
+        catAdapter = CatAdapter()
+        catList.adapter = catAdapter
+        catAdapter.submitList(categories)
+        channelAdapter = ChannelAdapter()
+        chanList.adapter = channelAdapter
         applyCategory(selectedCat)
 
         if (!ContentStore.hasData) {
@@ -186,9 +235,10 @@ class LiveFragment : Fragment(), FocusRestorable {
     // back to the first tab (Inicio). Refresh only the previously/newly
     // selected rows so the focused view stays attached.
     private fun applyCategory(id: String) {
-        if (id == selectedCat && chanList.adapter != null) return
+        if (id == selectedCat && categoriesApplied) return
         val oldId = selectedCat
         selectedCat = id
+        categoriesApplied = true
         val base = baseChannels()
         shownChannels = when {
             id == "__all__" -> base
@@ -201,8 +251,7 @@ class LiveFragment : Fragment(), FocusRestorable {
             id.startsWith("g:") -> base.filter { it.group == id.substring(2) }
             else -> base
         }
-        chanList.adapter = ChannelAdapter(shownChannels)
-        val catAdapter = catList.adapter ?: return
+        channelAdapter.submitList(shownChannels)
         val oldPos = categories.indexOfFirst { it.id == oldId }
         if (oldPos >= 0) catAdapter.notifyItemChanged(oldPos)
         val newPos = categories.indexOfFirst { it.id == id }
@@ -211,7 +260,7 @@ class LiveFragment : Fragment(), FocusRestorable {
 
     // ---------- Categories adapter ----------
 
-    inner class CatAdapter : RecyclerView.Adapter<CatAdapter.Holder>() {
+    inner class CatAdapter : ListAdapter<CatItem, CatAdapter.Holder>(catItemDiff) {
         inner class Holder(val tv: TextView) : RecyclerView.ViewHolder(tv)
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val ctx = parent.context
@@ -222,39 +271,62 @@ class LiveFragment : Fragment(), FocusRestorable {
                 isFocusable = true; isClickable = true
                 background = ctx.getDrawable(R.drawable.card_bg)
             }
-            return Holder(tv)
+            val h = Holder(tv)
+            tv.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p != RecyclerView.NO_POSITION) applyCategory(getItem(p).id)
+            }
+            tv.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) {
+                        focusedCatPos = p
+                        focusedChanPos = -1
+                        applyCategory(getItem(p).id)
+                    }
+                }
+            }
+            tv.setOnKeyListener { _, keyCode, ev ->
+                // Deterministic Up exit from the first row: focus search
+                // geometry can't be trusted to leave the list for the tab
+                // bar outside it, so the top row goes to its tab by name.
+                if (ev.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP &&
+                    h.bindingAdapterPosition == 0) {
+                    (activity as? MainActivity)?.focusTab(if (sportsOnly) "sports" else "live")
+                    true
+                } else false
+            }
+            return h
         }
-        override fun getItemCount() = categories.size
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val item = categories[pos]
+            val item = getItem(pos)
             val ctx = h.tv.context
             h.tv.text = "${item.label}    ${item.count}"
             h.tv.setTextColor(ctx.getColor(
                 if (item.id == selectedCat) R.color.text else R.color.text_dim))
             h.tv.setTypeface(h.tv.typeface, if (item.id == selectedCat) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-            h.tv.setOnClickListener { applyCategory(item.id) }
-            h.tv.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) {
-                    val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) focusedCatPos = p
-                    focusedChanPos = -1
-                    applyCategory(item.id)
-                }
-            }
         }
     }
 
     // ---------- Channels adapter ----------
 
-    inner class ChannelAdapter(private val items: List<LiveChannel>) : RecyclerView.Adapter<ChannelAdapter.Holder>() {
+    inner class ChannelAdapter : ListAdapter<LiveChannel, ChannelAdapter.Holder>(channelDiff) {
         inner class Holder(val root: LinearLayout) : RecyclerView.ViewHolder(root) {
             val num: TextView = root.getChildAt(0) as TextView
             val star: TextView = root.getChildAt(1) as TextView
             val logoFrame: ViewGroup = root.getChildAt(2) as ViewGroup
+            // Holder-owned logo views: the logo ImageView is created once and
+            // Glide loads into the SAME target on every bind, so a previous
+            // load is cancelled instead of landing late on a reused row.
+            val logoIv: ImageView = logoFrame.getChildAt(0) as ImageView
+            val logoFb: TextView = logoFrame.getChildAt(1) as TextView
             val info: LinearLayout = root.getChildAt(3) as LinearLayout
             val nameTv: TextView = (info.getChildAt(0) as LinearLayout).getChildAt(0) as TextView
             val progTv: TextView = info.getChildAt(1) as TextView
-            val barWrap: ViewGroup = info.getChildAt(2) as ViewGroup
+            // Progress bar as two weight-shared children created once; bind
+            // only moves the weight, with no new views and no posted layout.
+            val barFg: View = (info.getChildAt(2) as LinearLayout).getChildAt(0)
+            val barRest: View = (info.getChildAt(2) as LinearLayout).getChildAt(1)
             val timesTv: TextView = info.getChildAt(3) as TextView
         }
 
@@ -282,6 +354,17 @@ class LiveFragment : Fragment(), FocusRestorable {
                 layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 48), Ui.dp(ctx, 48)).apply { marginEnd = Ui.dp(ctx, 10) }
                 background = ctx.getDrawable(R.drawable.logo_tile)
             }
+            logoFrame.addView(ImageView(ctx).apply {
+                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
+            })
+            logoFrame.addView(Ui.text(ctx, "", 11f, android.R.color.black, true).apply {
+                gravity = android.view.Gravity.CENTER
+                setTextColor(0xFF222222.toInt())
+                visibility = View.GONE
+                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            })
             root.addView(logoFrame)
             val info = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
@@ -305,41 +388,83 @@ class LiveFragment : Fragment(), FocusRestorable {
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Ui.dp(ctx, 3) }
             }
             info.addView(progTv)
-            val barWrap = android.widget.FrameLayout(ctx).apply {
+            val barWrap = LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 4)).apply { topMargin = Ui.dp(ctx, 6) }
             }
+            barWrap.addView(View(ctx).apply {
+                setBackgroundColor(ctx.getColor(R.color.progress_blue))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 0f)
+            })
+            barWrap.addView(View(ctx).apply {
+                setBackgroundColor(ctx.getColor(R.color.border))
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            })
             info.addView(barWrap)
             val timesTv = Ui.text(ctx, "", 12f, R.color.text_faint).apply {
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Ui.dp(ctx, 3) }
             }
             info.addView(timesTv)
             root.addView(info)
-            return Holder(root)
+            val h = Holder(root)
+            root.setOnClickListener {
+                val p = h.bindingAdapterPosition
+                if (p != RecyclerView.NO_POSITION) {
+                    Playback.playChannel(ctx, getItem(p), if (sportsOnly) "sports" else "tv")
+                }
+            }
+            root.setOnKeyListener { _, keyCode, ev ->
+                if (ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                val p = h.bindingAdapterPosition
+                if (p == RecyclerView.NO_POSITION) return@setOnKeyListener false
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP -> if (p == 0) {
+                        (activity as? MainActivity)?.focusTab(if (sportsOnly) "sports" else "live")
+                        true
+                    } else false
+                    KeyEvent.KEYCODE_MENU -> {
+                        val ch = getItem(p)
+                        val nowFav = Favorites.toggle(ch.key)
+                        updateStar(h.star, ch)
+                        buildCategories(); catAdapter.submitList(categories)
+                        android.widget.Toast.makeText(ctx,
+                            if (nowFav) "★ Agregado a Favoritos" else "Quitado de Favoritos",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            root.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) {
+                        focusedChanPos = p
+                        val ch = getItem(p)
+                        focusedChannel = ch
+                        schedulePreview(ch)
+                    }
+                }
+            }
+            return h
         }
 
-        override fun getItemCount() = items.size
-
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val ch = items[pos]
-            val ctx = h.root.context
+            val ch = getItem(pos)
             h.num.text = (pos + 1).toString()
             updateStar(h.star, ch)
-            // logo
-            h.logoFrame.removeAllViews()
-            val iv = ImageView(ctx).apply {
-                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
-            }
-            h.logoFrame.addView(iv)
-            if (ch.logo.isNotBlank()) {
-                Glide.with(ctx).load(ch.logo).diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).fitCenter().into(iv)
+            // Logo: toggle the holder-owned views, never create new ones.
+            if (ch.logo.isBlank()) {
+                Glide.with(h.logoIv.context).clear(h.logoIv)
+                h.logoIv.setImageDrawable(null)
+                h.logoIv.visibility = View.GONE
+                h.logoFb.visibility = View.VISIBLE
+                h.logoFb.text = ch.name.take(5)
             } else {
-                val fb = Ui.text(ctx, ch.name.take(5), 11f, android.R.color.black, true)
-                fb.gravity = android.view.Gravity.CENTER
-                fb.setTextColor(0xFF222222.toInt())
-                fb.layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-                h.logoFrame.addView(fb)
+                h.logoFb.visibility = View.GONE
+                h.logoIv.visibility = View.VISIBLE
+                Glide.with(h.logoIv.context).load(ch.logo)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).fitCenter().into(h.logoIv)
             }
             h.nameTv.text = ch.name + if (ch.hasCatchup) "  ↺" else ""
             val (now, _) = EpgStore.nowNext(ch)
@@ -347,34 +472,12 @@ class LiveFragment : Fragment(), FocusRestorable {
                 h.progTv.text = now.title
                 val total = (now.stopUtc - now.startUtc).coerceAtLeast(1)
                 val done = (System.currentTimeMillis() - now.startUtc).coerceIn(0, total)
-                fillBar(h.barWrap, done.toDouble() / total)
+                setBar(h, done.toDouble() / total)
                 h.timesTv.text = "${Util.time(now.startUtc)} – ${Util.time(now.stopUtc)}"
             } else {
                 h.progTv.text = "Sin información de guía"
-                fillBar(h.barWrap, 0.0)
+                setBar(h, 0.0)
                 h.timesTv.text = ""
-            }
-            h.root.setOnClickListener {
-                Playback.playChannel(ctx, ch, if (sportsOnly) "sports" else "tv")
-            }
-            h.root.setOnKeyListener { _, keyCode, ev ->
-                if (ev.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_MENU) {
-                    val nowFav = Favorites.toggle(ch.key)
-                    updateStar(h.star, ch)
-                    buildCategories(); catList.adapter?.notifyDataSetChanged()
-                    android.widget.Toast.makeText(ctx,
-                        if (nowFav) "★ Agregado a Favoritos" else "Quitado de Favoritos",
-                        android.widget.Toast.LENGTH_SHORT).show()
-                    true
-                } else false
-            }
-            h.root.setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) {
-                    val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) focusedChanPos = p
-                    focusedChannel = ch
-                    schedulePreview(ch)
-                }
             }
         }
 
@@ -384,20 +487,10 @@ class LiveFragment : Fragment(), FocusRestorable {
             star.setTextColor(star.context.getColor(if (fav) R.color.star else R.color.text_faint))
         }
 
-        private fun fillBar(wrap: ViewGroup, fraction: Double) {
-            wrap.removeAllViews()
-            val ctx = wrap.context
-            val bg = View(ctx).apply {
-                setBackgroundColor(ctx.getColor(R.color.border))
-                layoutParams = android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 4))
-            }
-            wrap.addView(bg)
-            val fg = View(ctx).apply { setBackgroundColor(ctx.getColor(R.color.progress_blue)) }
-            wrap.addView(fg)
-            wrap.post {
-                val w = (wrap.width * fraction.coerceIn(0.0, 1.0)).toInt()
-                fg.layoutParams = android.widget.FrameLayout.LayoutParams(w, Ui.dp(ctx, 4))
-            }
+        private fun setBar(h: Holder, fraction: Double) {
+            val f = fraction.coerceIn(0.0, 1.0).toFloat()
+            (h.barFg.layoutParams as LinearLayout.LayoutParams).weight = f
+            (h.barRest.layoutParams as LinearLayout.LayoutParams).weight = 1f - f
         }
     }
 

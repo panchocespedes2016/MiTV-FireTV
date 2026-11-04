@@ -36,6 +36,7 @@ class VodDetailActivity : AppCompatActivity() {
     private var movieFavBtn: TextView? = null
     private var movieWatchedBtn: TextView? = null
     private var seriesFavBtn: TextView? = null
+    private var epListRef: RecyclerView? = null
 
     companion object {
         fun startMovie(ctx: Context, m: VodMovie) {
@@ -55,6 +56,15 @@ class VodDetailActivity : AppCompatActivity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // Back climbs one level inside the episode list: to the header
+        // controls. From there Back keeps its default (leave the screen).
+        if (keyCode == KeyEvent.KEYCODE_BACK && !Ui.dialogShowing) {
+            val ep = epListRef
+            if (ep != null && isDescendantOf(currentFocus, ep)) {
+                seriesFavBtn?.requestFocus()
+                return true
+            }
+        }
         if (keyCode == KeyEvent.KEYCODE_MENU) { showOptionsMenu(); return true }
         return super.onKeyDown(keyCode, event)
     }
@@ -220,6 +230,7 @@ class VodDetailActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 520)).apply { topMargin = Ui.dp(ctx, 12) }
             layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
+        epListRef = epList
         root.addView(epList)
         setContentView(ScrollView(ctx).apply { addView(root) })
         favBtn.requestFocus()

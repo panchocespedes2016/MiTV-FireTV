@@ -13,11 +13,24 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 
 /** Home per the approved mockup: Continuar viendo, Canales destacados,
  *  Películas populares, Series populares. */
-class HomeFragment : Fragment() {
+class HomeFragment : Fragment(), BackToParentHandler {
+
+    private var rootScroll: View? = null
+
+    /** Back climbs one level: any card row -> the tab bar. */
+    override fun handleBack(): Boolean {
+        val root = rootScroll ?: return false
+        val act = activity as? MainActivity ?: return false
+        val focused = act.currentFocus ?: return false
+        if (!isDescendantOf(focused, root)) return false
+        act.focusTab("home")
+        return true
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val ctx = requireContext()
         val scroll = ScrollView(ctx)
+        rootScroll = scroll
         val root = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(root)
 

@@ -186,7 +186,8 @@ class KeepFocusLinearLayoutManager(ctx: Context) : LinearLayoutManager(ctx) {
     ): View? {
         // Stock behavior scrolls to and returns the next row. Only at the
         // true list edge (no next row) keep the edge child in view.
-        super.onFocusSearchFailed(focused, direction, recycler, state)?.let { return it }
+        val stock = super.onFocusSearchFailed(focused, direction, recycler, state)
+        stock?.let { return it }
         val pos = when (direction) {
             View.FOCUS_DOWN -> findLastVisibleItemPosition()
             View.FOCUS_UP -> findFirstVisibleItemPosition()
@@ -229,7 +230,9 @@ class FocusTrapRecyclerView @JvmOverloads constructor(
             var v: View? = result
             while (v != null && v !== this) {
                 val parent = v.parent
-                if (parent is RecyclerView && parent !== this) return focused
+                if (parent is RecyclerView && parent !== this) {
+                    return focused
+                }
                 v = parent as? View
             }
         }

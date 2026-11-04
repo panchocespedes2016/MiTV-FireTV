@@ -20,6 +20,23 @@ interface FocusRestorable {
     fun restoreFocus(): Boolean
 }
 
+/** A fragment that handles the remote's Back key itself by moving focus up
+ *  one level (column -> parent category/menu) instead of leaving the tab.
+ *  True when the key was consumed. */
+interface BackToParentHandler {
+    fun handleBack(): Boolean
+}
+
+/** True when [view] is [ancestor] or lives inside it. */
+internal fun isDescendantOf(view: View?, ancestor: View): Boolean {
+    var v = view
+    while (v != null) {
+        if (v === ancestor) return true
+        v = v.parent as? View
+    }
+    return false
+}
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
@@ -170,6 +187,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
+            // Back climbs one level inside the current screen first
+            // (column -> category -> tab bar); only when the fragment has
+            // no parent step does Back leave for Inicio. Never while a
+            // dialog owns the focus (it dismisses itself).
+            if (!Ui.dialogShowing) {
+                val frag = supportFragmentManager.findFragmentById(R.id.content)
+                if (frag is BackToParentHandler && frag.handleBack()) return true
+            }
             if (currentTab != "home") {
                 selectTab("home", requestFocus = true)
                 return true

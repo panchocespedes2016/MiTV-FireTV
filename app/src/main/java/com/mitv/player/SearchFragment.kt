@@ -18,10 +18,21 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
 
 /** Search over loaded content, accent/case-insensitive (Windows rule),
  *  results grouped by type: channels, movies, series. */
-class SearchFragment : Fragment() {
+class SearchFragment : Fragment(), BackToParentHandler {
 
     private lateinit var resultsBox: LinearLayout
     private lateinit var input: EditText
+    private var rootLayout: View? = null
+
+    /** Back climbs one level: results or input -> the tab bar. */
+    override fun handleBack(): Boolean {
+        val root = rootLayout ?: return false
+        val act = activity as? MainActivity ?: return false
+        val focused = act.currentFocus ?: return false
+        if (!isDescendantOf(focused, root)) return false
+        act.focusTab("search")
+        return true
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val ctx = requireContext()
@@ -29,6 +40,7 @@ class SearchFragment : Fragment() {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         }
+        rootLayout = root
         input = EditText(ctx).apply {
             hint = "Escribe para buscar en canales, películas y series…"
             textSize = 19f
