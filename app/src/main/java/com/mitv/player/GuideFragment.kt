@@ -62,6 +62,9 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
         val list = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             layoutManager = KeepFocusLinearLayoutManager(ctx)
+            // The list container itself must never take focus: only its
+            // rows are focusable, so a fallback can never park on it.
+            isFocusable = false
         }
         guideList = list
         list.adapter = GuideAdapter(withEpg)

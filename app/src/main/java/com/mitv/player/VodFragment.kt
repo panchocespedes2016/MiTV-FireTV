@@ -55,6 +55,20 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
     // category list, not in the grid.
     private var focusedCatPos = 0
     private var focusedGridPos = -1
+    // Same guard as LiveFragment: while a programmatic refocus into the
+    // category list is in flight, a category row gaining focus must NOT
+    // switch content (fallback/restore, not navigation).
+    private var suppressCategoryApply = false
+
+    /** Focus a category row without treating the gain as a selection. */
+    private fun requestCategoryFocus(pos: Int) {
+        suppressCategoryApply = true
+        catList.scrollToPosition(pos)
+        catList.post {
+            catList.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
+            catList.post { suppressCategoryApply = false }
+        }
+    }
 
     /** Refocus the card/row at the last recorded position (grid preferred),
      *  scrolling it into view first. False when there is nothing to focus. */
@@ -72,10 +86,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         val catPos = focusedCatPos
         val catCount = catList.adapter?.itemCount ?: 0
         if (catPos in 0 until catCount) {
-            catList.scrollToPosition(catPos)
-            catList.post {
-                catList.findViewHolderForAdapterPosition(catPos)?.itemView?.requestFocus()
-            }
+            requestCategoryFocus(catPos)
             return true
         }
         return false
@@ -99,10 +110,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         val count = catList.adapter?.itemCount ?: 0
         if (count == 0) return
         val pos = focusedCatPos.coerceIn(0, count - 1)
-        catList.scrollToPosition(pos)
-        catList.post {
-            catList.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-        }
+        requestCategoryFocus(pos)
     }
 
     companion object {
@@ -127,6 +135,9 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 marginEnd = Ui.dp(ctx, 14)
             }
             layoutManager = KeepFocusLinearLayoutManager(ctx)
+            // The list container itself must never take focus: only its
+            // rows are focusable, so a fallback can never park on it.
+            isFocusable = false
             setBackgroundColor(ctx.getColor(R.color.panel))
             setPadding(Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8), Ui.dp(ctx, 8))
         }
@@ -134,6 +145,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         grid = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
             layoutManager = KeepFocusGridLayoutManager(ctx, 5)
+            isFocusable = false
             clipToPadding = false
             setPadding(Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4), Ui.dp(ctx, 4))
         }
@@ -231,7 +243,12 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
     }
 
     inner class CatAdapter : ListAdapter<LiveFragment.CatItem, CatAdapter.Holder>(vodCatItemDiff) {
-        inner class Holder(val tv: TextView) : RecyclerView.ViewHolder(tv)
+        inner class Holder(val tv: TextView) : RecyclerView.ViewHolder(tv) {
+            // Item bound to this holder: listeners read it instead of
+            // resolving the adapter position, which can be NO_POSITION
+            // while the list is settling (diff/layout in flight).
+            var item: LiveFragment.CatItem? = null
+        }
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val ctx = parent.context
             val tv = TextView(ctx).apply {
@@ -243,16 +260,17 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             }
             val h = Holder(tv)
             tv.setOnClickListener {
-                val p = h.bindingAdapterPosition
-                if (p != RecyclerView.NO_POSITION) applyCategory(getItem(p).id)
+                h.item?.let { applyCategory(it.id) }
             }
             tv.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
-                    val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) {
-                        focusedCatPos = p
+                    // A restore-driven gain is consumed, never a selection.
+                    if (suppressCategoryApply) { suppressCategoryApply = false; return@setOnFocusChangeListener }
+                    h.item?.let { item ->
+                        val p = h.bindingAdapterPosition
+                        if (p != RecyclerView.NO_POSITION) focusedCatPos = p
                         focusedGridPos = -1
-                        applyCategory(getItem(p).id)
+                        applyCategory(item.id)
                     }
                 }
             }
@@ -267,6 +285,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
             val item = getItem(pos)
+            h.item = item
             h.tv.text = "${item.label}    ${item.count}"
             h.tv.setTextColor(h.tv.context.getColor(if (item.id == selectedCat) R.color.text else R.color.text_dim))
         }

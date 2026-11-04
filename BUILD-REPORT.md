@@ -389,3 +389,52 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   1.0.14 report): results go to the tab/menu, not back to the input.
 - Commits: 44f7c32 (v1.0.14, instrumentation removed) and this
   version. Both pushed to GitHub with this addendum.
+
+## Addendum 2026-11-04 (v1.0.16, installed on the Stick)
+
+- User report on v1.0.15, live with the remote: no more jumps to
+  Inicio and the list holds more channels, but fast scrolling usually
+  lands the channel column inside the FIRST category (generally
+  Historial) around channel 20; slow scrolling is fine. Diagnosis
+  from code (nothing touched before approval): the category row's
+  focus listener switches content on ANY focus gain and wipes the
+  channel position, with no distinction between user navigation and
+  a fallback/restore gain. v1.0.15 only blocked fallback gains
+  landing on the tab bar, not gains landing in the category list.
+  Chain: fast scroll detaches the focused row between keys (proven
+  mechanism, v1.0.14 logs); the fallback lands in the category list;
+  the first row (Historial) gains focus and applyCategory swaps the
+  content; the next Down puts focus back in the channels, now
+  showing Historial. The same pattern exists in VodFragment.
+- Fix, MainActivity untouched: (1) suppressCategoryApply flag in
+  LiveFragment and VodFragment — restoreFocus()/focusCatRow() focus
+  category rows through requestCategoryFocus(), and a gain that
+  arrives while the flag is set is consumed, never a selection (the
+  flag is also cleared by a backstop post); (2) holders keep their
+  bound item, so listeners no longer resolve the adapter position,
+  which can be NO_POSITION while a diff/layout is settling; (3) the
+  list containers themselves (catList, chanList, grid, guideList)
+  are isFocusable=false — only rows take focus, so a fallback can
+  never park on a container. Category switching by real navigation
+  (keys/click) is unchanged. GuideFragment has no categories, only
+  the container change. versionCode 17 / versionName 1.0.16, clean
+  APK md5 b0d44788e9416ef0161d4bbd6863ae5d, verified by dumpsys
+  17/1.0.16.
+- Verification on the Stick (v116 runs, all captures read): entry OK
+  (channel 437, Todo, preview + EPG). After 40 fast Downs the focus
+  STAYED in Todo on channel 477 with the preview playing — no
+  Historial switch. BACK channels->categories kept Todo content
+  (guard holds on the restore path). Real navigation still
+  switches: Up to Favoritos showed the 12 favorite channels, Down
+  back to Todo restored the 1537 list. BACK categories->tab OK.
+  Movies: BACK from the grid to the Historial row kept the Todo
+  grid (guard holds in Vod too); BACK to the tab OK. Caveats:
+  (1) captures 1 s after a 12->1537 category switch showed a
+  transient mixed state (stale favorite rows + one Todo row); a
+  settle probe with 2 s waits + re-entering the list rendered Todo
+  correctly, so it is a mid-diff settle artifact, not a stuck
+  state. (2) The non-contiguous top holder (row "6" above 437)
+  seen in these runs also appeared in the v1.0.14 verified runs;
+  pre-existing cosmetic quirk, out of scope, left alone. (3) ADB
+  keys are slower than remote repeat: the user's own remote test
+  remains the ground truth.
