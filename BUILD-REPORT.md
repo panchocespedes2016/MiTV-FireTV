@@ -438,3 +438,39 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   pre-existing cosmetic quirk, out of scope, left alone. (3) ADB
   keys are slower than remote repeat: the user's own remote test
   remains the ground truth.
+
+## Addendum 2026-11-04 (portability, no app version change)
+
+- External review (another AI, static only) claimed the published tree
+  could not be rebuilt. Verified against the real tree: TRUE for a
+  clean clone — app_icon.png/banner.png existed locally but
+  `.gitignore` (`*.png`) kept them out of git; settings declared
+  only the localrepo mirror; signing required the untracked
+  keystore, and debug builds used the release key. Local builds
+  always worked; the published repo did not.
+- Fix (commit 985fa2e, pushed; NO behavior change, NO reinstall —
+  the Stick stays on v1.0.16): (1) `.gitignore` `*.png` -> `/*.png`
+  (root captures only), artwork PNGs now tracked; (2)
+  settings.gradle.kts keeps localrepo FIRST and adds
+  gradlePluginPortal()/google()/mavenCentral() as fallbacks, so
+  `./gradlew` on a machine with internet resolves the same pinned
+  versions; (3) app/build.gradle.kts: release signing applies only
+  when the keystore file AND both passwords exist (file or
+  MITV_STORE_PASSWORD/MITV_KEY_PASSWORD env vars), otherwise the
+  release APK builds UNSIGNED with a configuration warning;
+  debug builds use the default debug keystore, never the release
+  key; (4) tools/build.sh keeps the VM offline default (pinned
+  JDK/Gradle + --offline) with MITV_GRADLE/MITV_ONLINE/JAVA_HOME/
+  GRADLE_HOME overrides, and README documents both build paths.
+  The keystore password file stays gitignored in the workspace +
+  the user's PC backup (unchanged convention).
+- Verified: git check-ignore (artwork not ignored, root captures
+  still ignored); every pinned coordinate returns 200 on its
+  fallback host (AndroidX on Google's repo, glide/okhttp/coroutines
+  on Maven Central, AGP/Kotlin plugin markers on the plugin
+  portal); debug build WITHOUT the keystore (moved aside, restored
+  with md5 verified) SUCCEEDED with the warning; release build
+  with the keystore restored SUCCEEDED, same cert SHA-256
+  a9b98715... and version 1.0.16/17. The online-resolution path
+  itself (./gradlew on a machine with internet) could NOT be
+  tested from this VM — stated, not assumed.
