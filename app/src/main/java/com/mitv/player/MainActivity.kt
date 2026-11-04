@@ -14,6 +14,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** A fragment that can restore DPAD focus to the exact list position it was
+ *  last at, after the focus was lost entirely (fast scrolling). */
+interface FocusRestorable {
+    fun restoreFocus(): Boolean
+}
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var b: ActivityMainBinding
@@ -184,6 +190,8 @@ class MainActivity : AppCompatActivity() {
             // last content view instead; never run while a dialog owns the
             // focus. Only when that view is gone too, fall back to the tab.
             if (focused == null && !Ui.dialogShowing) {
+                val frag = supportFragmentManager.findFragmentById(R.id.content)
+                if (frag is FocusRestorable && frag.restoreFocus()) return true
                 val restore = lastContentFocus?.takeIf { it.isAttachedToWindow }
                 if (restore != null) restore.requestFocus()
                 else tabViews[currentTab]?.requestFocus()

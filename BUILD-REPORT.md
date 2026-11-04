@@ -240,3 +240,35 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   lost when the focused row is recycled; the restore then falls back to
   the tab and scrolling resumes from the top of the category list instead
   of the previous position. A position-aware restore is the follow-up.
+
+## Addendum 2026-11-04 (v1.0.12, installed on the Stick)
+
+- Position-aware focus restore (follow-up to the v1.0.11 edge). New
+  FocusRestorable interface (MainActivity.kt): when MainActivity's
+  lost-focus recovery runs with no focused view, it first asks the current
+  fragment to restore focus to its last recorded adapter position
+  (scrollToPosition + posted requestFocus). LiveFragment tracks the last
+  focused category/channel position (channels preferred, categories as
+  fallback); VodFragment tracks category/grid position (grid preferred);
+  GuideFragment tracks its row position. The v1.0.11 view/tab fallback
+  stays as the last resort. Installed 2026-11-04 (versionCode 13,
+  APK md5 399a8d41a889d0c59ffaf8eb5609220e).
+- Verification on the Stick, honest result: the restore is installed, but
+  the reported symptom PERSISTS. Entry into channels and grid confirmed
+  on screen (v112-r1: channel 1 focused, preview playing; v112-r3:
+  "Hoppers" card focused), yet after 40 fast Downs in channels the focus
+  ended on the TELEMUNDO category (v112-r2, byte-identical end state to
+  v1.0.11) and after 30 fast Downs in the grid it ended on the ESTRENOS
+  2026 category (v112-r4). A slow control run (16 Downs, 1 s apart,
+  v112-s2) escaped the same way, so speed/recycling is NOT the door.
+- Root cause found in the RecyclerView 1.3.2 source: when
+  onFocusSearchFailed returns the already-focused view (or any view not
+  strictly further in the direction), isPreferredNextFocus vetoes it and
+  focusSearch falls through to the parent, whose window-wide geometric
+  search jumps to the sibling list. The escape is the focus SEARCH, not
+  focus loss, so a restore that only fires when focus is null never
+  engages. The fix for that door (proposed as v1.0.13, not built):
+  a RecyclerView subclass that traps Up/Down escapes into a sibling
+  RecyclerView while still allowing Left/Right between lists and Up to
+  the tab bar (the tab bar is not a RecyclerView). Awaiting the user's
+  decision; v1.0.12 stays installed meanwhile.

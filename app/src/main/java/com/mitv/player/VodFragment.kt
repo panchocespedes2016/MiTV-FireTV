@@ -16,7 +16,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 
 /** Películas / Series: category sidebar + poster grid (approved mockup style). */
-class VodFragment : Fragment() {
+class VodFragment : Fragment(), FocusRestorable {
 
     private var isSeries = false
     private lateinit var catList: RecyclerView
@@ -25,6 +25,36 @@ class VodFragment : Fragment() {
     // Empty until the first applyCategory() runs, so the early-return there
     // never skips the initial load.
     private var selectedCat = ""
+    // Last focused adapter positions, for position-aware focus restore
+    // (FocusRestorable): -1 in focusedGridPos means focus was last in the
+    // category list, not in the grid.
+    private var focusedCatPos = 0
+    private var focusedGridPos = -1
+
+    /** Refocus the card/row at the last recorded position (grid preferred),
+     *  scrolling it into view first. False when there is nothing to focus. */
+    override fun restoreFocus(): Boolean {
+        if (!::grid.isInitialized || !::catList.isInitialized) return false
+        val gridPos = focusedGridPos
+        val gridCount = grid.adapter?.itemCount ?: 0
+        if (gridPos in 0 until gridCount) {
+            grid.scrollToPosition(gridPos)
+            grid.post {
+                grid.findViewHolderForAdapterPosition(gridPos)?.itemView?.requestFocus()
+            }
+            return true
+        }
+        val catPos = focusedCatPos
+        val catCount = catList.adapter?.itemCount ?: 0
+        if (catPos in 0 until catCount) {
+            catList.scrollToPosition(catPos)
+            catList.post {
+                catList.findViewHolderForAdapterPosition(catPos)?.itemView?.requestFocus()
+            }
+            return true
+        }
+        return false
+    }
 
     companion object {
         fun newInstance(isSeries: Boolean) = VodFragment().apply {
@@ -161,7 +191,14 @@ class VodFragment : Fragment() {
             h.tv.text = "${item.label}    ${item.count}"
             h.tv.setTextColor(h.tv.context.getColor(if (item.id == selectedCat) R.color.text else R.color.text_dim))
             h.tv.setOnClickListener { applyCategory(item.id) }
-            h.tv.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) applyCategory(item.id) }
+            h.tv.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedCatPos = p
+                    focusedGridPos = -1
+                    applyCategory(item.id)
+                }
+            }
         }
     }
 
@@ -213,6 +250,12 @@ class VodFragment : Fragment() {
                 HistoryStore.isWatched(m.key) -> "✓ Visto"
                 HistoryStore.entry(m.key)?.inProgress == true -> "⏵ Continuar"
                 else -> ""
+            }
+            h.iv.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedGridPos = p
+                }
             }
             h.iv.setOnClickListener { VodDetailActivity.startMovie(ctx, m) }
             h.iv.setOnKeyListener { _, kc, ev ->
@@ -279,6 +322,12 @@ class VodFragment : Fragment() {
             else h.iv.setImageDrawable(null)
             h.title.text = s.name
             h.sub.text = s.category
+            h.iv.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedGridPos = p
+                }
+            }
             h.iv.setOnClickListener { VodDetailActivity.startSeries(ctx, s) }
             h.iv.setOnKeyListener { _, kc, ev ->
                 if (ev.action == KeyEvent.ACTION_DOWN && kc == KeyEvent.KEYCODE_MENU) {

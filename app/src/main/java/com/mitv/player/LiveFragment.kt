@@ -26,7 +26,7 @@ import com.bumptech.glide.load.engine.DiskCacheStrategy
  *  Center: channel rows with EPG now + progress. Right: muted preview after
  *  a short focus dwell, now/next details. OK = fullscreen, Menu = favorite. */
 @OptIn(UnstableApi::class)
-class LiveFragment : Fragment() {
+class LiveFragment : Fragment(), FocusRestorable {
 
     private var sportsOnly = false
 
@@ -50,6 +50,36 @@ class LiveFragment : Fragment() {
     private var selectedCat = ""
     private var shownChannels: List<LiveChannel> = emptyList()
     private var focusedChannel: LiveChannel? = null
+    // Last focused adapter positions, for position-aware focus restore
+    // (FocusRestorable): -1 in focusedChanPos means focus was last in the
+    // category list, not in the channels.
+    private var focusedCatPos = 0
+    private var focusedChanPos = -1
+
+    /** Refocus the row at the last recorded position (channels preferred),
+     *  scrolling it into view first. False when there is nothing to focus. */
+    override fun restoreFocus(): Boolean {
+        if (!::chanList.isInitialized || !::catList.isInitialized) return false
+        val chanPos = focusedChanPos
+        val chanCount = chanList.adapter?.itemCount ?: 0
+        if (chanPos in 0 until chanCount) {
+            chanList.scrollToPosition(chanPos)
+            chanList.post {
+                chanList.findViewHolderForAdapterPosition(chanPos)?.itemView?.requestFocus()
+            }
+            return true
+        }
+        val catPos = focusedCatPos
+        val catCount = catList.adapter?.itemCount ?: 0
+        if (catPos in 0 until catCount) {
+            catList.scrollToPosition(catPos)
+            catList.post {
+                catList.findViewHolderForAdapterPosition(catPos)?.itemView?.requestFocus()
+            }
+            return true
+        }
+        return false
+    }
 
     data class CatItem(val id: String, val label: String, val count: Int)
 
@@ -203,7 +233,14 @@ class LiveFragment : Fragment() {
                 if (item.id == selectedCat) R.color.text else R.color.text_dim))
             h.tv.setTypeface(h.tv.typeface, if (item.id == selectedCat) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             h.tv.setOnClickListener { applyCategory(item.id) }
-            h.tv.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) applyCategory(item.id) }
+            h.tv.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedCatPos = p
+                    focusedChanPos = -1
+                    applyCategory(item.id)
+                }
+            }
         }
     }
 
@@ -333,6 +370,8 @@ class LiveFragment : Fragment() {
             }
             h.root.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedChanPos = p
                     focusedChannel = ch
                     schedulePreview(ch)
                 }

@@ -12,7 +12,23 @@ import androidx.recyclerview.widget.RecyclerView
 
 /** Guía v1: per-channel now/next list (a full time-grid is deferred — see
  *  BUILD-REPORT). Rows play the channel on OK. */
-class GuideFragment : Fragment() {
+class GuideFragment : Fragment(), FocusRestorable {
+
+    private lateinit var guideList: RecyclerView
+    private var focusedPos = 0
+
+    /** Refocus the row at the last recorded position, scrolling it into view
+     *  first. False when there is nothing to focus. */
+    override fun restoreFocus(): Boolean {
+        if (!::guideList.isInitialized) return false
+        val count = guideList.adapter?.itemCount ?: 0
+        if (focusedPos !in 0 until count) return false
+        guideList.scrollToPosition(focusedPos)
+        guideList.post {
+            guideList.findViewHolderForAdapterPosition(focusedPos)?.itemView?.requestFocus()
+        }
+        return true
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         val ctx = requireContext()
@@ -36,6 +52,7 @@ class GuideFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             layoutManager = KeepFocusLinearLayoutManager(ctx)
         }
+        guideList = list
         list.adapter = GuideAdapter(withEpg)
         root.addView(list)
         return root
@@ -97,6 +114,12 @@ class GuideFragment : Fragment() {
             val done = ((System.currentTimeMillis() - now.startUtc).coerceIn(0, total) * 100 / total).toInt()
             h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
             h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
+            h.row.setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    val p = h.bindingAdapterPosition
+                    if (p != RecyclerView.NO_POSITION) focusedPos = p
+                }
+            }
             h.row.setOnClickListener { Playback.playChannel(ctx, ch) }
         }
     }
