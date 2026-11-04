@@ -16,26 +16,20 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 
-/** Diff callbacks: list updates are diffed off the main thread and dispatched
- *  per item (ListAdapter), instead of swapping the whole adapter, which
- *  detached every row. Identity is the stable key; contents are data-class
- *  equality. */
-private val catItemDiff = object : DiffUtil.ItemCallback<LiveFragment.CatItem>() {
-    override fun areItemsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a.id == b.id
-    override fun areContentsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a == b
-}
-
-private val channelDiff = object : DiffUtil.ItemCallback<LiveChannel>() {
-    override fun areItemsTheSame(a: LiveChannel, b: LiveChannel) = a.key == b.key
-    override fun areContentsTheSame(a: LiveChannel, b: LiveChannel) = a == b
-}
+/** Lists are applied synchronously: when a category is focused, the
+ *  whole filtered list is known at once — setItems swaps the data and
+ *  notifies in the same call, so a position targeted right after a
+ *  category switch is valid immediately. Nothing settles later in a
+ *  background diff. The v1.0.9 hazard (a full refresh detaching the
+ *  focused row) cannot fire on a category switch: focus is in the
+ *  sidebar list, a different RecyclerView. The one path that refreshes
+ *  the list under the focused row (unfavoriting inside Favoritos)
+ *  re-focuses its row explicitly right after. */
 
 /** TV en vivo (and Deportes with sportsOnly=true), per the approved mockup.
  *  Left: categories with counts (Historial, Favoritos, Todo, groups).
@@ -83,13 +77,35 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
     // category row swaps the channel list to Historial under the user.
     private var suppressCategoryApply = false
 
-    /** Focus a category row without treating the gain as a selection. */
-    private fun requestCategoryFocus(pos: Int) {
+    /** Focus a category row without treating the gain as a selection.
+     *  Retries a few posted passes: a row that is not laid out yet must
+     *  still get the focus instead of the search falling back to the
+     *  tab bar. The suppress flag stays up across retries. */
+    private fun requestCategoryFocus(pos: Int, attempts: Int = 3) {
         suppressCategoryApply = true
         catList.scrollToPosition(pos)
         catList.post {
-            catList.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-            catList.post { suppressCategoryApply = false }
+            val holder = catList.findViewHolderForAdapterPosition(pos)
+            if (holder != null) {
+                holder.itemView.requestFocus()
+                catList.post { suppressCategoryApply = false }
+            } else if (attempts > 1) {
+                catList.post { requestCategoryFocus(pos, attempts - 1) }
+            } else {
+                catList.post { suppressCategoryApply = false }
+            }
+        }
+    }
+
+    /** Focus the channel row at [pos], retrying a few posted passes so a
+     *  row that is not laid out yet still gets the focus. */
+    private fun focusChannelRow(pos: Int, attempts: Int = 3) {
+        if (pos !in 0 until channelAdapter.itemCount) return
+        chanList.scrollToPosition(pos)
+        chanList.post {
+            val holder = chanList.findViewHolderForAdapterPosition(pos)
+            if (holder != null) holder.itemView.requestFocus()
+            else if (attempts > 1) chanList.post { focusChannelRow(pos, attempts - 1) }
         }
     }
 
@@ -98,12 +114,8 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
     override fun restoreFocus(): Boolean {
         if (!::chanList.isInitialized || !::catList.isInitialized) return false
         val chanPos = focusedChanPos
-        val chanCount = chanList.adapter?.itemCount ?: 0
-        if (chanPos in 0 until chanCount) {
-            chanList.scrollToPosition(chanPos)
-            chanList.post {
-                chanList.findViewHolderForAdapterPosition(chanPos)?.itemView?.requestFocus()
-            }
+        if (chanPos in 0 until channelAdapter.itemCount) {
+            focusChannelRow(chanPos)
             return true
         }
         val catPos = focusedCatPos
@@ -215,7 +227,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
         buildCategories()
         catAdapter = CatAdapter()
         catList.adapter = catAdapter
-        catAdapter.submitList(categories)
+        catAdapter.setItems(categories)
         channelAdapter = ChannelAdapter()
         chanList.adapter = channelAdapter
         applyCategory(selectedCat)
@@ -243,10 +255,12 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
         categories = list
     }
 
-    // Runs from a category row's focus listener: a full notifyDataSetChanged()
-    // here detaches the focused row, the focus is lost, and Fire OS falls
-    // back to the first tab (Inicio). Refresh only the previously/newly
-    // selected rows so the focused view stays attached.
+    // Runs from a category row's focus listener. The list swap is
+    // synchronous (setItems): the whole filtered list is in the
+    // adapter the moment this returns, so a focus move right after
+    // the switch targets a valid position. Only the previously/newly
+    // selected category rows are refreshed, so the focused sidebar
+    // row stays attached.
     private fun applyCategory(id: String, force: Boolean = false) {
         if (!force && id == selectedCat && categoriesApplied) return
         val oldId = selectedCat
@@ -264,7 +278,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
             id.startsWith("g:") -> base.filter { it.group == id.substring(2) }
             else -> base
         }
-        channelAdapter.submitList(shownChannels)
+        channelAdapter.setItems(shownChannels)
         val oldPos = categories.indexOfFirst { it.id == oldId }
         if (oldPos >= 0) catAdapter.notifyItemChanged(oldPos)
         val newPos = categories.indexOfFirst { it.id == id }
@@ -273,11 +287,14 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
     // ---------- Categories adapter ----------
 
-    inner class CatAdapter : ListAdapter<CatItem, CatAdapter.Holder>(catItemDiff) {
+    inner class CatAdapter : RecyclerView.Adapter<CatAdapter.Holder>() {
+        private var items: List<CatItem> = emptyList()
+        fun setItems(newItems: List<CatItem>) { items = newItems; notifyDataSetChanged() }
+        override fun getItemCount() = items.size
         inner class Holder(val tv: TextView) : RecyclerView.ViewHolder(tv) {
             // Item bound to this holder: listeners read it instead of
             // resolving the adapter position, which can be NO_POSITION
-            // while the list is settling (diff/layout in flight).
+            // while a layout is settling.
             var item: CatItem? = null
         }
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -318,7 +335,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
             return h
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val item = getItem(pos)
+            val item = items[pos]
             h.item = item
             val ctx = h.tv.context
             h.tv.text = "${item.label}    ${item.count}"
@@ -330,7 +347,10 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
     // ---------- Channels adapter ----------
 
-    inner class ChannelAdapter : ListAdapter<LiveChannel, ChannelAdapter.Holder>(channelDiff) {
+    inner class ChannelAdapter : RecyclerView.Adapter<ChannelAdapter.Holder>() {
+        private var items: List<LiveChannel> = emptyList()
+        fun setItems(newItems: List<LiveChannel>) { items = newItems; notifyDataSetChanged() }
+        override fun getItemCount() = items.size
         inner class Holder(val root: LinearLayout) : RecyclerView.ViewHolder(root) {
             val num: TextView = root.getChildAt(0) as TextView
             val star: TextView = root.getChildAt(1) as TextView
@@ -430,7 +450,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
             root.setOnClickListener {
                 val p = h.bindingAdapterPosition
                 if (p != RecyclerView.NO_POSITION) {
-                    Playback.playChannel(ctx, getItem(p), if (sportsOnly) "sports" else "tv")
+                    Playback.playChannel(ctx, items[p], if (sportsOnly) "sports" else "tv")
                 }
             }
             root.setOnKeyListener { _, keyCode, ev ->
@@ -443,13 +463,20 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                         true
                     } else false
                     KeyEvent.KEYCODE_MENU -> {
-                        val ch = getItem(p)
+                        val ch = items[p]
                         val nowFav = Favorites.toggle(ch.key)
                         updateStar(h.star, ch)
-                        buildCategories(); catAdapter.submitList(categories)
+                        buildCategories(); catAdapter.setItems(categories)
                         // Unfavoriting inside Favoritos must drop the row
-                        // now, not on the next category switch.
-                        if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
+                        // now, not on the next category switch. The list
+                        // was rebuilt under the focused row, so put the
+                        // focus back on the row now at this position
+                        // (the next channel) instead of leaving it lost.
+                        if (selectedCat == "__favs__") {
+                            applyCategory(selectedCat, force = true)
+                            focusedChanPos = p.coerceAtMost((channelAdapter.itemCount - 1).coerceAtLeast(0))
+                            focusChannelRow(focusedChanPos)
+                        }
                         android.widget.Toast.makeText(ctx,
                             if (nowFav) "★ Agregado a Favoritos" else "Quitado de Favoritos",
                             android.widget.Toast.LENGTH_SHORT).show()
@@ -463,7 +490,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                     val p = h.bindingAdapterPosition
                     if (p != RecyclerView.NO_POSITION) {
                         focusedChanPos = p
-                        val ch = getItem(p)
+                        val ch = items[p]
                         focusedChannel = ch
                         schedulePreview(ch)
                     }
@@ -473,7 +500,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
 
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val ch = getItem(pos)
+            val ch = items[pos]
             h.num.text = (pos + 1).toString()
             updateStar(h.star, ch)
             // Logo: toggle the holder-owned views, never create new ones.

@@ -9,30 +9,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.Fragment
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 
-/** Diff callbacks: list updates are diffed off the main thread and dispatched
- *  per item (ListAdapter), instead of swapping the whole adapter. */
-private val movieDiff = object : DiffUtil.ItemCallback<VodMovie>() {
-    override fun areItemsTheSame(a: VodMovie, b: VodMovie) = a.key == b.key
-    override fun areContentsTheSame(a: VodMovie, b: VodMovie) = a == b
-}
-
-private val serieDiff = object : DiffUtil.ItemCallback<SerieItem>() {
-    override fun areItemsTheSame(a: SerieItem, b: SerieItem) = a.key == b.key
-    override fun areContentsTheSame(a: SerieItem, b: SerieItem) = a == b
-}
-
-private val vodCatItemDiff = object : DiffUtil.ItemCallback<LiveFragment.CatItem>() {
-    override fun areItemsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a.id == b.id
-    override fun areContentsTheSame(a: LiveFragment.CatItem, b: LiveFragment.CatItem) = a == b
-}
+/** Lists are applied synchronously, same rule as LiveFragment: when a
+ *  category is focused, the whole filtered list is known at once
+ *  (setItems swaps the data and notifies in the same call). Nothing
+ *  settles later in a background diff. */
 
 /** Películas / Series: category sidebar + poster grid (approved mockup style). */
 class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
@@ -60,13 +46,36 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
     // switch content (fallback/restore, not navigation).
     private var suppressCategoryApply = false
 
-    /** Focus a category row without treating the gain as a selection. */
-    private fun requestCategoryFocus(pos: Int) {
+    /** Focus a category row without treating the gain as a selection.
+     *  Retries a few posted passes: a row that is not laid out yet must
+     *  still get the focus instead of the search falling back to the
+     *  tab bar. The suppress flag stays up across retries. */
+    private fun requestCategoryFocus(pos: Int, attempts: Int = 3) {
         suppressCategoryApply = true
         catList.scrollToPosition(pos)
         catList.post {
-            catList.findViewHolderForAdapterPosition(pos)?.itemView?.requestFocus()
-            catList.post { suppressCategoryApply = false }
+            val holder = catList.findViewHolderForAdapterPosition(pos)
+            if (holder != null) {
+                holder.itemView.requestFocus()
+                catList.post { suppressCategoryApply = false }
+            } else if (attempts > 1) {
+                catList.post { requestCategoryFocus(pos, attempts - 1) }
+            } else {
+                catList.post { suppressCategoryApply = false }
+            }
+        }
+    }
+
+    /** Focus the grid card at [pos], retrying a few posted passes so a
+     *  card that is not laid out yet still gets the focus. */
+    private fun focusGridRow(pos: Int, attempts: Int = 3) {
+        val count = grid.adapter?.itemCount ?: 0
+        if (pos !in 0 until count) return
+        grid.scrollToPosition(pos)
+        grid.post {
+            val holder = grid.findViewHolderForAdapterPosition(pos)
+            if (holder != null) holder.itemView.requestFocus()
+            else if (attempts > 1) grid.post { focusGridRow(pos, attempts - 1) }
         }
     }
 
@@ -77,10 +86,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         val gridPos = focusedGridPos
         val gridCount = grid.adapter?.itemCount ?: 0
         if (gridPos in 0 until gridCount) {
-            grid.scrollToPosition(gridPos)
-            grid.post {
-                grid.findViewHolderForAdapterPosition(gridPos)?.itemView?.requestFocus()
-            }
+            focusGridRow(gridPos)
             return true
         }
         val catPos = focusedCatPos
@@ -154,7 +160,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         buildCategories()
         catAdapter = CatAdapter()
         catList.adapter = catAdapter
-        catAdapter.submitList(categories)
+        catAdapter.setItems(categories)
         if (isSeries) {
             seriesAdapter = SeriesAdapter()
             grid.adapter = seriesAdapter
@@ -208,7 +214,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 id.startsWith("g:") -> ContentStore.series.filter { it.category == id.substring(2) }
                 else -> ContentStore.series
             }
-            seriesAdapter?.submitList(items)
+            seriesAdapter?.setItems(items)
         } else {
             val items = when {
                 id == "__all__" -> ContentStore.movies
@@ -219,7 +225,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 id.startsWith("g:") -> ContentStore.movies.filter { it.category == id.substring(2) }
                 else -> ContentStore.movies
             }
-            movieAdapter?.submitList(items)
+            movieAdapter?.setItems(items)
         }
         val oldPos = categories.indexOfFirst { it.id == oldId }
         if (oldPos >= 0) catAdapter.notifyItemChanged(oldPos)
@@ -241,11 +247,14 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
     }
 
-    inner class CatAdapter : ListAdapter<LiveFragment.CatItem, CatAdapter.Holder>(vodCatItemDiff) {
+    inner class CatAdapter : RecyclerView.Adapter<CatAdapter.Holder>() {
+        private var items: List<LiveFragment.CatItem> = emptyList()
+        fun setItems(newItems: List<LiveFragment.CatItem>) { items = newItems; notifyDataSetChanged() }
+        override fun getItemCount() = items.size
         inner class Holder(val tv: TextView) : RecyclerView.ViewHolder(tv) {
             // Item bound to this holder: listeners read it instead of
             // resolving the adapter position, which can be NO_POSITION
-            // while the list is settling (diff/layout in flight).
+            // while a layout is settling.
             var item: LiveFragment.CatItem? = null
         }
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -283,14 +292,17 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             return h
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val item = getItem(pos)
+            val item = items[pos]
             h.item = item
             h.tv.text = "${item.label}    ${item.count}"
             h.tv.setTextColor(h.tv.context.getColor(if (item.id == selectedCat) R.color.text else R.color.text_dim))
         }
     }
 
-    inner class MovieAdapter : ListAdapter<VodMovie, MovieAdapter.Holder>(movieDiff) {
+    inner class MovieAdapter : RecyclerView.Adapter<MovieAdapter.Holder>() {
+        private var items: List<VodMovie> = emptyList()
+        fun setItems(newItems: List<VodMovie>) { items = newItems; notifyDataSetChanged() }
+        override fun getItemCount() = items.size
         inner class Holder(val col: LinearLayout) : RecyclerView.ViewHolder(col) {
             val iv: ImageView = col.getChildAt(0) as ImageView
             val title: TextView = col.getChildAt(1) as TextView
@@ -332,7 +344,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             }
             iv.setOnClickListener {
                 val p = h.bindingAdapterPosition
-                if (p != RecyclerView.NO_POSITION) VodDetailActivity.startMovie(ctx, getItem(p))
+                if (p != RecyclerView.NO_POSITION) VodDetailActivity.startMovie(ctx, items[p])
             }
             iv.setOnKeyListener { _, kc, ev ->
                 if (ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -344,7 +356,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                         true
                     } else false
                     KeyEvent.KEYCODE_MENU -> {
-                        val m = getItem(p)
+                        val m = items[p]
                         val entry = HistoryStore.entry(m.key)
                         val resume = entry?.inProgress == true
                         Ui.showMenuDialog(ctx, m.name, listOf(
@@ -352,9 +364,15 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                                 { Playback.playMovie(ctx, m, resume = resume) },
                             (if (Favorites.isFav(m.key)) "☆ Quitar de Favoritos" else "★ Favorito") to {
                                 Favorites.toggle(m.key)
-                                buildCategories(); catAdapter.submitList(categories)
-                                if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
-                                notifyItemChanged(p)
+                                buildCategories(); catAdapter.setItems(categories)
+                                if (selectedCat == "__favs__") {
+                                    applyCategory(selectedCat, force = true)
+                                    // List rebuilt under the focused card:
+                                    // focus the card now at this position.
+                                    focusedGridPos = p.coerceAtMost(((grid.adapter?.itemCount ?: 1) - 1).coerceAtLeast(0))
+                                    focusGridRow(focusedGridPos)
+                                }
+                                if (p < itemCount) notifyItemChanged(p)
                             },
                             (if (HistoryStore.isWatched(m.key)) "✓ Visto (quitar)" else "✓ Marcar como visto") to {
                                 toggleWatchedMovie(m)
@@ -369,7 +387,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             return h
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val m = getItem(pos)
+            val m = items[pos]
             val ctx = h.col.context
             if (m.logo.isNotBlank()) Glide.with(ctx).load(m.logo)
                 .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).centerCrop().into(h.iv)
@@ -387,7 +405,10 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
     }
 
-    inner class SeriesAdapter : ListAdapter<SerieItem, SeriesAdapter.Holder>(serieDiff) {
+    inner class SeriesAdapter : RecyclerView.Adapter<SeriesAdapter.Holder>() {
+        private var items: List<SerieItem> = emptyList()
+        fun setItems(newItems: List<SerieItem>) { items = newItems; notifyDataSetChanged() }
+        override fun getItemCount() = items.size
         inner class Holder(val col: LinearLayout) : RecyclerView.ViewHolder(col) {
             val iv: ImageView = col.getChildAt(0) as ImageView
             val title: TextView = col.getChildAt(1) as TextView
@@ -426,7 +447,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             }
             iv.setOnClickListener {
                 val p = h.bindingAdapterPosition
-                if (p != RecyclerView.NO_POSITION) VodDetailActivity.startSeries(ctx, getItem(p))
+                if (p != RecyclerView.NO_POSITION) VodDetailActivity.startSeries(ctx, items[p])
             }
             iv.setOnKeyListener { _, kc, ev ->
                 if (ev.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -438,13 +459,19 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                         true
                     } else false
                     KeyEvent.KEYCODE_MENU -> {
-                        val s = getItem(p)
+                        val s = items[p]
                         Ui.showMenuDialog(ctx, s.name, listOf(
                             "▶ Ver episodios" to { VodDetailActivity.startSeries(ctx, s) },
                             (if (Favorites.isFav(s.key)) "☆ Quitar de Favoritos" else "★ Favorito") to {
                                 Favorites.toggle(s.key)
-                                buildCategories(); catAdapter.submitList(categories)
-                                if (selectedCat == "__favs__") applyCategory(selectedCat, force = true)
+                                buildCategories(); catAdapter.setItems(categories)
+                                if (selectedCat == "__favs__") {
+                                    applyCategory(selectedCat, force = true)
+                                    // List rebuilt under the focused card:
+                                    // focus the card now at this position.
+                                    focusedGridPos = p.coerceAtMost(((grid.adapter?.itemCount ?: 1) - 1).coerceAtLeast(0))
+                                    focusGridRow(focusedGridPos)
+                                }
                             }
                         ))
                         true
@@ -455,7 +482,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             return h
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
-            val s = getItem(pos)
+            val s = items[pos]
             val ctx = h.col.context
             if (s.cover.isNotBlank()) Glide.with(ctx).load(s.cover)
                 .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).centerCrop().into(h.iv)

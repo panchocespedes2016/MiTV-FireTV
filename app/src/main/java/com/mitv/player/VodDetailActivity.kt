@@ -241,6 +241,9 @@ class VodDetailActivity : AppCompatActivity() {
         val epList = FocusTrapRecyclerView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(ctx, 520)).apply { topMargin = Ui.dp(ctx, 12) }
             layoutManager = KeepFocusLinearLayoutManager(ctx)
+            // Up must leave this list for the buttons above it, so the
+            // vertical containment of the tab screens does not apply here.
+            containVerticalFocus = false
         }
         epListRef = epList
         root.addView(epList)

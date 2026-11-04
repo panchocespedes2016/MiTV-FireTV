@@ -557,3 +557,62 @@ agregar su lista en Ajustes → Listas IPTV → + Agregar lista.
   keyboard) — the leg was re-run with the keyboard dismissed first.
   The Stick was left on Inicio, app alive, favorites at 12.
 - Commit + push pending in this same pass (see git log).
+
+## v1.0.18 (2026-11-04, versionCode 19) — focus holds, list known at once
+
+User's diagnosis, confirmed in code: fast Down scrolling detached the
+focused row between keys, focus fell back to the Inicio tab, the
+v1.0.15 guard blocked the screen switch but the restore sometimes did
+not land (row not laid out yet), the next Down searched from the tab
+and dropped the focus on the first category (Historial), and the cycle
+repeated. His rule: if the next row cannot be focused — end of list or
+row not ready — focus STAYS where it is. And his question: the whole
+list must be known the moment a category is focused, not settled later.
+- Synchronous lists: the five ListAdapters (Live Cat/Channel, Vod
+  Cat/Movie/Series) became plain RecyclerView.Adapters with setItems()
+  (swap + notifyDataSetChanged in one call). The filtered data was
+  always computed synchronously; the async background diff was what
+  made the list feel "made on the fly" (stale/mixed rows ~1s after a
+  switch in v1.0.16). Category switches run while focus is in the
+  sidebar, so the full refresh cannot detach the focused row. The one
+  path that refreshes the list under the focused row (unfavoriting
+  inside Favoritos) re-focuses its row explicitly right after, and the
+  Vod movie handler guards notifyItemChanged(p) to a valid position.
+  Diff callbacks and ListAdapter imports removed. GuideAdapter was
+  already a plain adapter (fixed list); untouched except restore.
+- FocusTrapRecyclerView: for Up/Down, ANY answer outside the list now
+  keeps the current focus (before: only answers inside a sibling
+  RecyclerView were trapped; the tab bar is not one, so the edge
+  escape reached it). All legitimate Up exits (top row -> its tab)
+  are row key listeners, verified in every list. Left/Right still
+  escape. containVerticalFocus=false for the episode list in
+  VodDetailActivity (Up must reach the buttons above it).
+- MainActivity: new fallbackTabGain flag — set on a fallback tab
+  gain, cleared when focus is anywhere explicit. While set, an Up/Down
+  is treated like the lost-focus case (restore content, consume the
+  key) instead of searching from the tab onto the first category.
+  Left/Right on a parked tab still move between tabs.
+- restoreFocus() in Live/Vod/Guide: bounded retry (up to 3 posted
+  passes) so a row that is not laid out yet still gets the focus.
+- Verification on the Stick (captures v118-m0..m7, n0/n1, p0/p1,
+  q0..q4, final — all read): spaced 10 Downs 1->11 exactly, no
+  escape; unspaced 40 Downs 11->15 (heavy ADB key loss, known
+  artifact), no escape, no category change; BACK keeps content.
+  Category switch FULLY swapped 0.3s after the gain (Favoritos rows,
+  all starred, no stale rows) and identical at 2.3s — the sync-list
+  claim verified on screen. Favorite ADD (MENU on Unitel, 12->13,
+  toast, filled star) and REMOVE inside Favoritos (row gone at once,
+  count back to 12, toast, focus on the next row, preview playing)
+  verified; favorites restored to the original 12. Grid: 20 fast
+  Downs stayed in the Peliculas grid, BACK grid->categories holds.
+  Top-edge: extra UPs past row 1 parked the focus on the TV tab
+  (by design) with no cycle. No FATAL in logcat, app alive
+  (pid 13615 after the fresh install). The Stick was left on
+  Peliculas, app alive, favorites at 12.
+- Code-level only: the fallbackTabGain/parked-tab key path (cannot be
+  produced deterministically by ADB — the race needs remote repeat
+  speed); the user's remote is ground truth for the cycle being gone.
+- APK: clean md5 b60806ef3d3f9249d4c45b68041454f1, 6,045,531 bytes,
+  same release cert (SHA-256 a9b98715...). Installed via pi3 ADB,
+  dumpsys confirms 19/1.0.18. Build 3m 23s (detached; the earlier
+  foreground build log is /tmp/b118.log).

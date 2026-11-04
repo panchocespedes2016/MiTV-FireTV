@@ -19,16 +19,23 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
     private var focusedPos = 0
 
     /** Refocus the row at the last recorded position, scrolling it into view
-     *  first. False when there is nothing to focus. */
+     *  first. False when there is nothing to focus. Retries a few posted
+     *  passes so a row that is not laid out yet still gets the focus. */
     override fun restoreFocus(): Boolean {
         if (!::guideList.isInitialized) return false
         val count = guideList.adapter?.itemCount ?: 0
         if (focusedPos !in 0 until count) return false
-        guideList.scrollToPosition(focusedPos)
-        guideList.post {
-            guideList.findViewHolderForAdapterPosition(focusedPos)?.itemView?.requestFocus()
-        }
+        focusGuideRow(focusedPos)
         return true
+    }
+
+    private fun focusGuideRow(pos: Int, attempts: Int = 3) {
+        guideList.scrollToPosition(pos)
+        guideList.post {
+            val holder = guideList.findViewHolderForAdapterPosition(pos)
+            if (holder != null) holder.itemView.requestFocus()
+            else if (attempts > 1) guideList.post { focusGuideRow(pos, attempts - 1) }
+        }
     }
 
     /** Back climbs one level: the guide list -> the tab bar (no categories). */

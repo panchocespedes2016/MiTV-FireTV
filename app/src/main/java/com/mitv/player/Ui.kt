@@ -203,28 +203,31 @@ class KeepFocusGridLayoutManager(ctx: Context, spanCount: Int) : GridLayoutManag
 }
 
 /**
- * RecyclerView that keeps Up/Down navigation inside itself. Even with the
- * managers above, RecyclerView vetoes a same-row answer and the search
- * falls through to the parent, whose window-wide search can land on a
- * sibling list (categories <-> channels). Trap that case: when the Up/Down
- * result lives inside another RecyclerView, keep the current focus.
- * Left/Right still escape (list <-> sidebar) and Up to the tab bar still
- * works, because the tab bar is not a RecyclerView.
+ * RecyclerView that keeps Up/Down navigation inside itself. Rule (the
+ * user's): if the next row cannot be focused — list edge, or the row is
+ * not laid out yet — focus STAYS on the current row. It never escapes
+ * to the tab bar or a sibling list: every legitimate Up exit (top row
+ * -> its tab) is wired by a key listener on the row itself, so a
+ * search that would leave the list can always be refused here.
+ * Left/Right still escape (list <-> sidebar). Lists embedded in a
+ * screen where Up/Down must leave (the episode list in the detail
+ * screen, whose buttons live above it) set containVerticalFocus
+ * to false and keep the old behavior.
  */
 class FocusTrapRecyclerView @JvmOverloads constructor(
     ctx: Context, attrs: android.util.AttributeSet? = null, defStyle: Int = 0
 ) : RecyclerView(ctx, attrs, defStyle) {
+    var containVerticalFocus: Boolean = true
+
     override fun focusSearch(focused: View, direction: Int): View? {
         val result = super.focusSearch(focused, direction)
-        if (result != null && (direction == View.FOCUS_DOWN || direction == View.FOCUS_UP)) {
+        if (containVerticalFocus && result != null &&
+            (direction == View.FOCUS_DOWN || direction == View.FOCUS_UP)) {
+            // Refuse any Up/Down answer outside this list: walk up from
+            // the result; if this list is not an ancestor, stay put.
             var v: View? = result
-            while (v != null && v !== this) {
-                val parent = v.parent
-                if (parent is RecyclerView && parent !== this) {
-                    return focused
-                }
-                v = parent as? View
-            }
+            while (v != null && v !== this) v = v.parent as? View
+            if (v == null) return focused
         }
         return result
     }

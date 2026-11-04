@@ -54,6 +54,14 @@ class MainActivity : AppCompatActivity() {
      *  Down, with no key pressed). Such a gain must never switch screens;
      *  focus goes back to the content instead. */
     private var tabFocusExpected = false
+    /** True while the focus sits on a tab ONLY because of a fallback
+     *  gain (see tabFocusExpected): the restore posted from that gain
+     *  has not landed yet. While true, an Up/Down key is treated like
+     *  the lost-focus case in onKeyDown — restore the content instead
+     *  of searching from the tab, which would drop the focus on the
+     *  first category row and restart the cycle. Cleared as soon as
+     *  focus is anywhere explicit (content, or an expected tab gain). */
+    private var fallbackTabGain = false
 
     private fun clearTabFocusFlagSoon() {
         b.tabBar.post { tabFocusExpected = false }
@@ -93,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         b.root.viewTreeObserver.addOnGlobalFocusChangeListener { _, newFocus ->
             if (newFocus != null && !tabViews.values.contains(newFocus) && isInContent(newFocus)) {
                 lastContentFocus = newFocus
+                fallbackTabGain = false
             }
         }
 
@@ -110,6 +119,7 @@ class MainActivity : AppCompatActivity() {
                 background = getDrawable(R.drawable.tab_bg)
                 setOnClickListener {
                     tabFocusExpected = true
+                    fallbackTabGain = false
                     selectTab(key, requestFocus = false)
                     clearTabFocusFlagSoon()
                 }
@@ -118,6 +128,7 @@ class MainActivity : AppCompatActivity() {
                         val expected = tabFocusExpected
                         tabFocusExpected = false
                         if (expected) {
+                            fallbackTabGain = false
                             selectTab(key, requestFocus = false)
                             b.tabScroll.post {
                                 b.tabScroll.smoothScrollTo(
@@ -126,7 +137,9 @@ class MainActivity : AppCompatActivity() {
                         } else if (!Ui.dialogShowing) {
                             // Fallback gain (focused row detached between
                             // keys): never switch screens on it. Send focus
-                            // back to the content that lost it.
+                            // back to the content that lost it, and mark
+                            // the tab as parked here until a key retries.
+                            fallbackTabGain = true
                             restoreContentFocus()
                         }
                     }
@@ -162,6 +175,7 @@ class MainActivity : AppCompatActivity() {
     /** Move remote focus to a tab (selects it via the focus listener). */
     fun focusTab(key: String) {
         tabFocusExpected = true
+        fallbackTabGain = false
         tabViews[key]?.requestFocus()
         clearTabFocusFlagSoon()
     }
@@ -190,6 +204,7 @@ class MainActivity : AppCompatActivity() {
             .commit()
         if (requestFocus) {
             tabFocusExpected = true
+            fallbackTabGain = false
             tabViews[key]?.requestFocus()
             clearTabFocusFlagSoon()
         }
@@ -261,7 +276,15 @@ class MainActivity : AppCompatActivity() {
             // whose focus listener switches the whole screen. Restore the
             // last content view instead; never run while a dialog owns the
             // focus. Only when that view is gone too, fall back to the tab.
-            if (focused == null && !Ui.dialogShowing) {
+            // Same treatment when the focus is parked on a tab by a
+            // fallback gain and the restore has not landed yet: an Up/Down
+            // searched from the tab would land on the first category row
+            // and restart the cycle, so restore the content instead and
+            // consume the key. Left/Right on a parked tab still move
+            // between tabs (explicit navigation).
+            val parkedOnTab = fallbackTabGain && focused != null && tabViews.values.contains(focused) &&
+                (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
+            if ((focused == null || parkedOnTab) && !Ui.dialogShowing) {
                 val frag = supportFragmentManager.findFragmentById(R.id.content)
                 if (frag is FocusRestorable && frag.restoreFocus()) return true
                 val restore = lastContentFocus?.takeIf { it.isAttachedToWindow }
