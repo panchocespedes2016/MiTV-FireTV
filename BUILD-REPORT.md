@@ -703,7 +703,7 @@ out only as wide as the view, so scrolling just slid the truncated
 text out and showed blank — the view is now set horizontally
 scrolling while its marquee runs, so the full text is laid out and
 the scroll reveals it. APK: clean md5 b8e19445f837abc33e3f0d4b72111aed,
-6,052,859 bytes, same release cert; installed via pi3 ADB, dumpsys
+6,053,111 bytes, same release cert; installed via pi3 ADB, dumpsys
 confirms 23/1.0.22. Builds: /tmp/b122.log (first attempt, failed on a
 stray brace + `hasFocus` called as a property), /tmp/b122c.log
 (BUILD SUCCESSFUL 3m 02s, measurement bug), /tmp/b122d.log (6m 12s,
