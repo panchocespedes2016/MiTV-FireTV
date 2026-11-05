@@ -211,7 +211,9 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
         panel.addView(playerView)
         previewBox = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        previewTitle = Ui.text(ctx, "", 20f, R.color.text, true)
+        previewTitle = Ui.text(ctx, "", 20f, R.color.text, true).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }
         previewMeta = Ui.text(ctx, "", 14f, R.color.text_dim)
         previewDesc = Ui.text(ctx, "", 14f, R.color.text_dim)
         previewDesc.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Ui.dp(ctx, 8) }
@@ -497,7 +499,10 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                         val ch = items[p]
                         focusedChannel = ch
                         schedulePreview(ch)
+                        Marquee.start(h.nameTv, h.progTv)
                     }
+                } else {
+                    Marquee.stop(h.nameTv, h.progTv, previewTitle)
                 }
             }
             return h
@@ -505,6 +510,9 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
 
         override fun onBindViewHolder(h: Holder, pos: Int) {
             val ch = items[pos]
+            // A recycled row keeps the old marquee state: stop it before
+            // the new text lands, and restart it if this row has focus.
+            Marquee.stop(h.nameTv, h.progTv)
             h.num.text = (pos + 1).toString()
             updateStar(h.star, ch)
             // Logo: toggle the holder-owned views, never create new ones.
@@ -533,6 +541,7 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 setBar(h, 0.0)
                 h.timesTv.text = ""
             }
+            if (h.root.hasFocus()) h.root.post { Marquee.start(h.nameTv, h.progTv) }
         }
 
         private fun updateStar(star: TextView, ch: LiveChannel) {
@@ -571,6 +580,10 @@ class LiveFragment : Fragment(), FocusRestorable, BackToParentHandler {
             previewDesc.text = "Sin información de guía para este canal."
             previewNext.text = ""
         }
+        // The preview shows the focused channel: its title scrolls while
+        // the row has focus, like the row's own texts.
+        Marquee.stop(previewTitle)
+        Marquee.start(previewTitle)
     }
 
     private fun startPreviewPlayer(ch: LiveChannel) {

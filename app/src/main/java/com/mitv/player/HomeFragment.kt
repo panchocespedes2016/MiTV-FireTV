@@ -169,6 +169,9 @@ class HomeFragment : Fragment(), BackToParentHandler {
         val s = Ui.text(ctx, sub, 13f, R.color.text_faint)
         s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.END
         col.addView(s)
+        iv.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) Marquee.start(t, s) else Marquee.stop(t, s)
+        }
         if (fraction > 0) {
             val bar = Ui.progressBar(ctx, fraction, R.color.accent2, 4)
             (bar.layoutParams as LinearLayout.LayoutParams).topMargin = Ui.dp(ctx, 6)
@@ -204,6 +207,9 @@ class HomeFragment : Fragment(), BackToParentHandler {
         val s = Ui.text(ctx, sub, 12f, R.color.text_faint)
         s.maxLines = 1; s.ellipsize = android.text.TextUtils.TruncateAt.END
         col.addView(s)
+        iv.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) Marquee.start(t, s) else Marquee.stop(t, s)
+        }
         return col
     }
 
@@ -225,6 +231,9 @@ class HomeFragment : Fragment(), BackToParentHandler {
         t.maxLines = 1; t.ellipsize = android.text.TextUtils.TruncateAt.END
         t.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = Ui.dp(ctx, 7) }
         col.addView(t)
+        tile.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) Marquee.start(t) else Marquee.stop(t)
+        }
         return col
     }
 }

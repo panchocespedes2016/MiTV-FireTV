@@ -322,7 +322,9 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-            info.addView(Ui.text(ctx, "", 17f, R.color.text, true))
+            info.addView(Ui.text(ctx, "", 17f, R.color.text, true).apply {
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
             val nowTv = Ui.text(ctx, "", 14f, R.color.text_dim).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
             info.addView(nowTv)
             val nextTv = Ui.text(ctx, "", 13f, R.color.text_faint).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -332,7 +334,12 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
             row.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
                     val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) focusedGuidePos = p
+                    if (p != RecyclerView.NO_POSITION) {
+                        focusedGuidePos = p
+                        Marquee.start(h.nameTv, h.nowTv, h.nextTv)
+                    }
+                } else {
+                    Marquee.stop(h.nameTv, h.nowTv, h.nextTv)
                 }
             }
             row.setOnClickListener {
@@ -372,6 +379,9 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
             val (ch, now, next) = items[pos]
+            // A recycled row keeps the old marquee state: stop it before
+            // the new text lands, and restart it if this row has focus.
+            Marquee.stop(h.nameTv, h.nowTv, h.nextTv)
             h.num.text = (pos + 1).toString()
             updateStar(h.star, ch)
             if (ch.logo.isNotBlank()) Glide.with(h.logoIv.context).load(ch.logo)
@@ -390,6 +400,7 @@ class GuideFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 h.nowTv.text = "AHORA · ${Util.time(now.startUtc)}–${Util.time(now.stopUtc)} · ${now.title}  ($done%)"
                 h.nextTv.text = if (next != null) "DESPUÉS · ${Util.time(next.startUtc)}–${Util.time(next.stopUtc)} · ${next.title}" else ""
             }
+            if (h.row.hasFocus()) h.row.post { Marquee.start(h.nameTv, h.nowTv, h.nextTv) }
         }
 
         private fun updateStar(star: TextView, ch: LiveChannel) {

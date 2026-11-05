@@ -208,9 +208,23 @@ class SearchFragment : Fragment(), BackToParentHandler {
                 if (useLogoTile) marginStart = Ui.dp(ctx, 12)
             }
         }
-        info.addView(Ui.text(ctx, title, 17f, R.color.text, true))
-        if (sub.isNotEmpty()) info.addView(Ui.text(ctx, sub, 13f, R.color.text_dim))
+        val titleTv = Ui.text(ctx, title, 17f, R.color.text, true).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        info.addView(titleTv)
+        val subTv: TextView? = if (sub.isNotEmpty()) Ui.text(ctx, sub, 13f, R.color.text_dim).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }.also { info.addView(it) } else null
         row.addView(info)
+        row.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                Marquee.start(titleTv)
+                subTv?.let { Marquee.start(it) }
+            } else {
+                Marquee.stop(titleTv)
+                subTv?.let { Marquee.stop(it) }
+            }
+        }
         return row
     }
 }

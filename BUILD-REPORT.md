@@ -679,3 +679,39 @@ back to compiling without it). NOT verified on screen: the
 verification run found the user live on the TV (Fire OS home in the
 captures), so no ADB navigation was run; on-screen confirmation is
 pending his own remote check.
+
+## v1.0.22 (2026-11-05, versionCode 23) — Marquee on truncated text
+
+User's request: any text that does not fit must scroll right-to-left,
+hold 5 s, come back, and repeat forever. New `Marquee.kt`: a custom
+animator (not the platform marquee, which jumps back and has a fixed
+short pause). Cycle: scroll left at 40dp/s until the last letter is
+visible, hold 5 s, scroll back to the start, hold 2 s so the beginning
+stays readable, repeat. It runs ONLY on the focused row/card — the
+unfocused rows keep their "…" — and text that fits never moves.
+Wired everywhere text truncates: TV/Deportes rows (name + programme
+line + preview title), Guide rows (name + AHORA + DESPUÉS), movie and
+series cards (title + subtitle), Home cards (title + subtitle), Search
+result rows (title + subtitle). Recycled rows stop the marquee on
+bind and restart it if the row still has focus; losing focus stops it
+and restores the ellipsis, scroll position and gravity.
+Two bugs found by the on-screen verification before shipping: (1) the
+first build measured the layout's line width, but with ellipsize END
+that width always looks like the text fits, so nothing scrolled —
+now measured with the paint; (2) a single-line TextView lays its text
+out only as wide as the view, so scrolling just slid the truncated
+text out and showed blank — the view is now set horizontally
+scrolling while its marquee runs, so the full text is laid out and
+the scroll reveals it. APK: clean md5 b8e19445f837abc33e3f0d4b72111aed,
+6,052,859 bytes, same release cert; installed via pi3 ADB, dumpsys
+confirms 23/1.0.22. Builds: /tmp/b122.log (first attempt, failed on a
+stray brace + `hasFocus` called as a property), /tmp/b122c.log
+(BUILD SUCCESSFUL 3m 02s, measurement bug), /tmp/b122d.log (6m 12s,
+layout-width bug), /tmp/b122f.log (BUILD SUCCESSFUL 2m 46s, final).
+Verified on screen (captures v122-p0–p3): TV row 2 name goes
+"Adults: Venus" -> "lts: Venus" -> "Adults: Ve" -> "Adults: Ve" ->
+"dults: Ven" across two cycles, programme line "Hace que mi culo se
+oscile" likewise; unfocused rows never move. Guide verified too
+(v122-r0/r1): the long row-5 name scrolls left and returns. Vod/Home/
+Search use the same helper and wiring but were not screenshotted
+individually. Note: the list has grown to 1565 channels (was 1543).

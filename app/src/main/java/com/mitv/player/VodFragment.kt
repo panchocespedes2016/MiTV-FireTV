@@ -339,7 +339,12 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             iv.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
                     val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) focusedGridPos = p
+                    if (p != RecyclerView.NO_POSITION) {
+                        focusedGridPos = p
+                        Marquee.start(h.title, h.sub)
+                    }
+                } else {
+                    Marquee.stop(h.title, h.sub)
                 }
             }
             iv.setOnClickListener {
@@ -388,6 +393,9 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
             val m = items[pos]
+            // A recycled card keeps the old marquee state: stop it before
+            // the new text lands, and restart it if this card has focus.
+            Marquee.stop(h.title, h.sub)
             val ctx = h.col.context
             if (m.logo.isNotBlank()) Glide.with(ctx).load(m.logo)
                 .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).centerCrop().into(h.iv)
@@ -402,6 +410,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
                 HistoryStore.entry(m.key)?.inProgress == true -> "⏵ Continuar"
                 else -> ""
             }
+            if (h.iv.hasFocus()) h.iv.post { Marquee.start(h.title, h.sub) }
         }
     }
 
@@ -442,7 +451,12 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             iv.setOnFocusChangeListener { _, hasFocus ->
                 if (hasFocus) {
                     val p = h.bindingAdapterPosition
-                    if (p != RecyclerView.NO_POSITION) focusedGridPos = p
+                    if (p != RecyclerView.NO_POSITION) {
+                        focusedGridPos = p
+                        Marquee.start(h.title, h.sub)
+                    }
+                } else {
+                    Marquee.stop(h.title, h.sub)
                 }
             }
             iv.setOnClickListener {
@@ -483,6 +497,9 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
         }
         override fun onBindViewHolder(h: Holder, pos: Int) {
             val s = items[pos]
+            // A recycled card keeps the old marquee state: stop it before
+            // the new text lands, and restart it if this card has focus.
+            Marquee.stop(h.title, h.sub)
             val ctx = h.col.context
             if (s.cover.isNotBlank()) Glide.with(ctx).load(s.cover)
                 .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC).centerCrop().into(h.iv)
@@ -492,6 +509,7 @@ class VodFragment : Fragment(), FocusRestorable, BackToParentHandler {
             }
             h.title.text = s.name
             h.sub.text = s.category
+            if (h.iv.hasFocus()) h.iv.post { Marquee.start(h.title, h.sub) }
         }
     }
 }
